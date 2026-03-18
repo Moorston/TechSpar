@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import TopicCard from "../components/TopicCard";
 import { getTopics, startInterview, getResumeStatus, uploadResume } from "../api/interview";
 
+const API_BASE = "/api";
+
 const styles = {
   page: {
     flex: 1,
@@ -165,12 +167,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [resumeFile, setResumeFile] = useState(null); // {filename, size} or null
   const [uploading, setUploading] = useState(false);
+  const [profile, setProfile] = useState(null);
 
   useEffect(() => {
     getTopics().then(setTopics).catch(() => {});
     getResumeStatus().then((s) => {
       if (s.has_resume) setResumeFile({ filename: s.filename, size: s.size });
     }).catch(() => {});
+    fetch(`${API_BASE}/profile`).then(r => r.json()).then(setProfile).catch(() => {});
   }, []);
 
   const handleUpload = async (e) => {
@@ -250,6 +254,65 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Quick stats */}
+      {profile?.stats?.total_sessions > 0 && !mode && (() => {
+        const s = profile.stats;
+        const lastEntry = (s.score_history || []).slice(-1)[0];
+        const mastery = profile.topic_mastery || {};
+        const topTopics = Object.entries(mastery)
+          .sort((a, b) => (b[1].score || 0) - (a[1].score || 0))
+          .slice(0, 3);
+        return (
+          <div style={{
+            width: "100%", maxWidth: 700, marginBottom: 40,
+            background: "var(--bg-card)", border: "1px solid var(--border)",
+            borderRadius: 12, padding: "20px 24px",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <span style={{ fontSize: 15, fontWeight: 600 }}>训练概览</span>
+              <span
+                style={{ fontSize: 13, color: "var(--accent-light)", cursor: "pointer" }}
+                onClick={() => navigate("/profile")}
+              >
+                查看画像 &rsaquo;
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+              <div style={{ textAlign: "center", minWidth: 60 }}>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "var(--accent-light)" }}>{s.total_sessions}</div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>总练习</div>
+              </div>
+              <div style={{ textAlign: "center", minWidth: 60 }}>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "var(--green)" }}>{s.avg_score || "-"}</div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>综合平均</div>
+              </div>
+              {topTopics.length > 0 && (
+                <div style={{ flex: 1, minWidth: 120 }}>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 6 }}>领域掌握</div>
+                  {topTopics.map(([t, d]) => (
+                    <div key={t} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, width: 70, color: "var(--text)" }}>{t}</span>
+                      <div style={{ flex: 1, height: 4, borderRadius: 2, background: "var(--border)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${d.score || 0}%`, borderRadius: 2, background: "var(--accent-light)" }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: "var(--text-dim)", width: 28 }}>{d.score || 0}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {lastEntry && (
+                <div style={{ textAlign: "center", minWidth: 80 }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: lastEntry.avg_score >= 6 ? "var(--green)" : "#e2b93b" }}>
+                    {lastEntry.avg_score}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>上次得分</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {mode === "resume" && (
         <div style={styles.resumeSection}>

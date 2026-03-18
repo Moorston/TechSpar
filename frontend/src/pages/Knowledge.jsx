@@ -154,7 +154,7 @@ const styles = {
   },
   tabActive: {
     color: "var(--text)",
-    borderBottomColor: "var(--accent)",
+    borderBottom: "2px solid var(--accent)",
   },
   content: {
     flex: 1,
@@ -525,6 +525,9 @@ export default function Knowledge() {
             <div style={styles.empty}>选择一个领域</div>
           ) : tab === "core" ? (
             <div>
+              <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 12 }}>
+                AI 出题和评分的参考依据，编辑后影响该领域的题目质量。支持 Markdown 格式。
+              </div>
               <div style={styles.addBar}>
                 {showNewFile ? (
                   <>
@@ -607,7 +610,7 @@ export default function Knowledge() {
           ) : (
             <div>
               <div style={{ fontSize: 13, color: "var(--text-dim)", marginBottom: 12 }}>
-                记录该领域高频面试题，出题时会优先覆盖这些考点。支持 Markdown 格式。
+                标记的高频面试考点，出题时会优先覆盖。支持 Markdown 格式。
               </div>
               <textarea
                 style={{ ...styles.textarea, minHeight: 500 }}
