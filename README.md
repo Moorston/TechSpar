@@ -179,7 +179,7 @@ EMBEDDING_MODEL=BAAI/bge-m3
 docker compose up --build
 ```
 
-前端访问 `http://localhost`，后端 API `http://localhost:8000`。
+访问 `http://localhost` 即可使用，API 通过 Nginx 反向代理自动转发。
 
 ### 2b. 手动启动
 
