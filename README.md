@@ -173,7 +173,15 @@ EMBEDDING_API_KEY=
 EMBEDDING_MODEL=BAAI/bge-m3
 ```
 
-### 2. 启动后端
+### 2a. Docker 一键启动（推荐）
+
+```bash
+docker compose up --build
+```
+
+前端访问 `http://localhost`，后端 API `http://localhost:8000`。
+
+### 2b. 手动启动
 
 ```bash
 pip install -r requirements.txt
@@ -188,7 +196,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:5173` 开始训练。
+打开 `http://localhost:5173` 开始训练（Docker 方式则访问 `http://localhost`）。
 
 ## 项目结构
 
@@ -217,8 +225,12 @@ TechSpar/
 │   ├── knowledge/           # 各领域知识文档
 │   ├── resume/              # 简历文件（.gitignore）
 │   └── user_profile/        # 用户画像（.gitignore）
+├── docker-compose.yml      # Docker 一键部署
+├── backend/Dockerfile      # 后端镜像
+├── frontend/Dockerfile     # 前端镜像（Node 构建 → Nginx）
 ├── .env.example
-└── requirements.txt
+├── requirements.txt
+└── clear_data.sh           # 数据清理脚本
 ```
 
 ## 技术栈

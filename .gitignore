@@ -10,8 +10,11 @@ frontend/node_modules/
 frontend/dist/
 
 # User data (personal, not for sharing)
-data/resume/
-data/user_profile/
+data/resume/*
+data/user_profile/*
+data/user_profile/insights/*
+!data/resume/.gitkeep
+!data/user_profile/.gitkeep
 data/interviews.db
 
 # Generated / cache
