@@ -691,6 +691,36 @@ def get_topic_graph(topic: str):
     return build_graph(topic)
 
 
+@router.post("/interview/reference-answer")
+async def generate_reference_answer(body: dict):
+    """Generate a reference answer for a specific question using LLM + knowledge base."""
+    topic = body.get("topic", "").strip()
+    question = body.get("question", "").strip()
+    if not topic or not question:
+        raise HTTPException(400, "topic and question are required")
+
+    from backend.indexer import retrieve_topic_context, load_topics
+    from backend.llm_provider import get_langchain_llm
+    from backend.prompts.interviewer import REFERENCE_ANSWER_PROMPT
+    from langchain_core.messages import HumanMessage
+
+    topics = load_topics()
+    topic_name = topics.get(topic, {}).get("name", topic)
+
+    refs = retrieve_topic_context(topic, question, top_k=3)
+    knowledge_context = "\n\n".join(refs) if refs else "（暂无参考材料）"
+
+    prompt = REFERENCE_ANSWER_PROMPT.format(
+        topic_name=topic_name,
+        question=question,
+        knowledge_context=knowledge_context,
+    )
+
+    llm = get_langchain_llm()
+    resp = llm.invoke([HumanMessage(content=prompt)])
+    return {"reference_answer": resp.content.strip()}
+
+
 @router.get("/interview/review/{session_id}")
 async def get_review(session_id: str):
     """Get review for a completed session."""

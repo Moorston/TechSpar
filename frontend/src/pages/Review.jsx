@@ -1,7 +1,8 @@
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
-import { getReview } from "../api/interview";
+import { BookOpen } from "lucide-react";
+import { getReview, getReferenceAnswer } from "../api/interview";
 
 function getScoreColor(score) {
   if (score >= 8) return { bg: "rgba(0,184,148,0.15)", color: "var(--green)" };
@@ -47,11 +48,25 @@ function DimensionScores({ dimensionScores, avgScore }) {
   );
 }
 
-function DrillReview({ scores, overall, questions, answers }) {
+function DrillReview({ scores, overall, questions, answers, topic }) {
   const answerMap = {};
   for (const a of (answers || [])) answerMap[a.question_id] = a.answer;
   const scoreMap = {};
   for (const s of (scores || [])) scoreMap[s.question_id] = s;
+  const [refAnswers, setRefAnswers] = useState({});
+  const [refLoading, setRefLoading] = useState({});
+
+  const handleRefAnswer = async (qId, questionText) => {
+    if (refAnswers[qId]) return;
+    setRefLoading((p) => ({ ...p, [qId]: true }));
+    try {
+      const data = await getReferenceAnswer(topic, questionText);
+      setRefAnswers((p) => ({ ...p, [qId]: data.reference_answer }));
+    } catch (e) {
+      setRefAnswers((p) => ({ ...p, [qId]: "生成失败: " + e.message }));
+    }
+    setRefLoading((p) => ({ ...p, [qId]: false }));
+  };
 
   const avgScore = overall?.avg_score || "-";
 
@@ -166,6 +181,30 @@ function DrillReview({ scores, overall, questions, answers }) {
             {s.key_missing?.length > 0 && (
               <div className="text-[13px] text-red leading-normal">遗漏关键点: {s.key_missing.join("、")}</div>
             )}
+
+            {topic && (
+              <div className="mt-3 pt-3 border-t border-border">
+                {refAnswers[q.id] ? (
+                  <div className="text-sm leading-[1.8]">
+                    <div className="text-xs font-semibold text-dim mb-2 flex items-center gap-1.5">
+                      <BookOpen size={13} /> 参考答案
+                    </div>
+                    <div className="md-content bg-hover rounded-lg px-3.5 py-3">
+                      <ReactMarkdown>{refAnswers[q.id]}</ReactMarkdown>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    className="text-[13px] text-accent-light flex items-center gap-1.5 bg-transparent border-none cursor-pointer transition-opacity disabled:opacity-50"
+                    onClick={() => handleRefAnswer(q.id, q.question)}
+                    disabled={refLoading[q.id]}
+                  >
+                    <BookOpen size={13} />
+                    {refLoading[q.id] ? "正在生成参考答案..." : "查看参考答案"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -188,6 +227,7 @@ export default function Review() {
   const [answers, setAnswers] = useState(stateData.answers || []);
   const [messages, setMessages] = useState(stateData.messages || []);
   const [mode, setMode] = useState(stateData.mode || null);
+  const [topic, setTopic] = useState(stateData.topic || null);
   const [showTranscript, setShowTranscript] = useState(false);
   const [loading, setLoading] = useState(!review && !scores);
 
@@ -211,6 +251,7 @@ export default function Review() {
             }
           }
           if (data.mode) setMode(data.mode);
+          if (data.topic) setTopic(data.topic);
           if (data.overall && Object.keys(data.overall).length) {
             setOverall(data.overall);
           } else if (data.weak_points) {
@@ -237,7 +278,7 @@ export default function Review() {
       </div>
 
       {showDrill ? (
-        <DrillReview scores={scores} overall={overall} questions={questions} answers={answers} />
+        <DrillReview scores={scores} overall={overall} questions={questions} answers={answers} topic={topic} />
       ) : (
         <>
           <DimensionScores

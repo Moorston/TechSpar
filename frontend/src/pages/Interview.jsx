@@ -91,7 +91,7 @@ export default function Interview() {
       }));
       const data = await endInterview(sessionId, answerList);
       navigate(`/review/${sessionId}`, {
-        state: { review: data.review, scores: data.scores, overall: data.overall, questions, answers: answerList, mode: "topic_drill" },
+        state: { review: data.review, scores: data.scores, overall: data.overall, questions, answers: answerList, mode: "topic_drill", topic: initData.topic },
       });
     } catch (err) {
       alert("评估失败: " + err.message);

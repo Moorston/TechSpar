@@ -89,6 +89,16 @@ export async function getReview(sessionId) {
   return res.json();
 }
 
+export async function getReferenceAnswer(topic, question) {
+  const res = await fetch(`${API_BASE}/interview/reference-answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ topic, question }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getHistory(limit = 20, offset = 0, mode = null, topic = null) {
   const params = new URLSearchParams({ limit, offset });
   if (mode) params.set("mode", mode);
