@@ -15,6 +15,7 @@ function getScoreColor(score) {
 const MODE_BADGES = {
   resume: { text: "简历面试", cls: "bg-accent/15 text-accent-light" },
   topic_drill: { text: "专项训练", cls: "bg-green/15 text-green" },
+  recording: { text: "录音复盘", cls: "bg-blue-500/15 text-blue-400" },
 };
 
 export default function History() {
@@ -81,6 +82,7 @@ export default function History() {
           { key: "all", label: "全部" },
           { key: "resume", label: "简历面试" },
           { key: "topic_drill", label: "专项训练" },
+          { key: "recording", label: "录音复盘" },
         ].map((m) => (
           <button
             key={m.key}

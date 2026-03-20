@@ -2,12 +2,13 @@
 import uuid
 from datetime import datetime
 
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage, AIMessage
 
 from backend.models import (
     StartInterviewRequest, ChatRequest, EndDrillRequest,
+    RecordingAnalyzeRequest,
     InterviewMode, InterviewPhase,
 )
 from backend.graphs.resume_interview import compile_resume_interview
@@ -115,7 +116,7 @@ async def upload_resume(file: UploadFile = File(...)):
 
 @router.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
-    """Transcribe audio to text using FunASR Paraformer-zh."""
+    """Transcribe short audio clip to text via DashScope ASR."""
     audio_bytes = await file.read()
     if not audio_bytes:
         raise HTTPException(400, "Empty audio file.")
@@ -125,10 +126,241 @@ async def transcribe(file: UploadFile = File(...)):
         suffix = "." + (file.filename or "audio.webm").rsplit(".", 1)[-1]
         text = transcribe_audio(audio_bytes, suffix=suffix)
         return {"text": text}
-    except ImportError:
-        raise HTTPException(501, "FunASR not installed. Run: pip install funasr")
     except Exception as e:
         raise HTTPException(500, f"Transcription failed: {e}")
+
+
+# ── Recording review endpoints ──
+
+@router.post("/recording/transcribe")
+async def recording_transcribe(
+    file: UploadFile = File(...),
+    mode: str = Form("dual"),
+):
+    """Transcribe recording audio via DashScope ASR. Speaker identification handled by LLM later."""
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(400, "Empty audio file.")
+
+    suffix = "." + (file.filename or "audio.webm").rsplit(".", 1)[-1]
+
+    try:
+        from backend.transcribe import transcribe_audio
+        text = transcribe_audio(audio_bytes, suffix=suffix)
+        return {"transcript": text, "segments": []}
+    except Exception as e:
+        raise HTTPException(500, f"Transcription failed: {e}")
+
+
+@router.post("/recording/analyze")
+async def recording_analyze(req: RecordingAnalyzeRequest):
+    """Analyze a recording transcript — dual mode extracts Q&A, solo mode does holistic eval."""
+    session_id = str(uuid.uuid4())
+
+    if req.recording_mode == "dual":
+        return await _analyze_dual(req, session_id)
+    else:
+        return await _analyze_solo(req, session_id)
+
+
+async def _analyze_dual(req: RecordingAnalyzeRequest, session_id: str):
+    """Dual mode: structure transcript into Q&A → evaluate → update profile."""
+    from backend.graphs.topic_drill import _parse_json_response
+    from backend.llm_provider import get_langchain_llm
+    from backend.prompts.recording import RECORDING_STRUCTURE_PROMPT, RECORDING_DUAL_EVAL_PROMPT
+    from langchain_core.messages import SystemMessage
+
+    llm = get_langchain_llm()
+
+    # Step 1: LLM structures transcript into Q&A pairs
+    structure_prompt = RECORDING_STRUCTURE_PROMPT.format(
+        transcript=req.transcript[:8000],
+    )
+    response = llm.invoke([
+        SystemMessage(content="你是面试记录分析引擎。只返回 JSON，不要其他内容。"),
+        HumanMessage(content=structure_prompt),
+    ])
+
+    try:
+        structured = _parse_json_response(response.content)
+    except Exception:
+        raise HTTPException(500, "录音结构化失败，LLM 返回格式异常。请重试。")
+
+    qa_pairs = structured.get("qa_pairs", [])
+    if not qa_pairs:
+        raise HTTPException(400, "未能从录音中提取出有效的问答对。请检查转写文本。")
+
+    # Convert to drill-compatible format
+    questions = []
+    answers = []
+    for pair in qa_pairs:
+        qid = pair.get("id", len(questions) + 1)
+        questions.append({
+            "id": qid,
+            "question": pair["question"],
+            "difficulty": 3,
+            "focus_area": pair.get("focus_area", ""),
+        })
+        answers.append({
+            "question_id": qid,
+            "answer": pair.get("answer", ""),
+        })
+
+    # Create session
+    create_session(session_id, mode="recording", questions=questions)
+
+    # Step 2: Evaluate Q&A pairs (recording-specific prompt, no topic binding)
+    qa_lines = []
+    for q, a in zip(questions, answers):
+        qa_lines.append(
+            f"### Q{q['id']} ({q.get('focus_area', '')})\n"
+            f"**题目**: {q['question']}\n**回答**: {a['answer']}"
+        )
+
+    eval_prompt = RECORDING_DUAL_EVAL_PROMPT.format(
+        qa_pairs="\n\n".join(qa_lines),
+    )
+    eval_response = llm.invoke([
+        SystemMessage(content="你是面试评估引擎。只返回 JSON，不要其他内容。"),
+        HumanMessage(content=eval_prompt),
+    ])
+
+    try:
+        eval_result = _parse_json_response(eval_response.content)
+    except Exception:
+        raise HTTPException(500, "评估失败，LLM 返回格式异常。请重试。")
+
+    scores = eval_result.get("scores", [])
+    overall = eval_result.get("overall", {})
+
+    for s in scores:
+        s.setdefault("difficulty", 3)
+
+    # Step 3: Format review + save
+    review = _format_drill_review(questions, answers, scores, overall)
+    save_drill_answers(session_id, answers)
+    save_review(session_id, review, scores, overall.get("new_weak_points", []), overall)
+
+    # Step 4: Update profile (topic=None, weak/strong points carry their own topic)
+    await _update_recording_profile(overall, scores, len(questions))
+
+    return {
+        "session_id": session_id,
+        "mode": "recording",
+        "recording_mode": "dual",
+        "review": review,
+        "scores": scores,
+        "overall": overall,
+        "questions": questions,
+        "answers": answers,
+    }
+
+
+async def _analyze_solo(req: RecordingAnalyzeRequest, session_id: str):
+    """Solo mode: holistic evaluation of candidate's technical expression."""
+    from backend.graphs.topic_drill import _parse_json_response
+    from backend.llm_provider import get_langchain_llm
+    from backend.prompts.recording import RECORDING_SOLO_EVAL_PROMPT
+    from langchain_core.messages import SystemMessage
+
+    create_session(session_id, mode="recording")
+
+    llm = get_langchain_llm()
+    eval_prompt = RECORDING_SOLO_EVAL_PROMPT.format(
+        transcript=req.transcript[:8000],
+    )
+    response = llm.invoke([
+        SystemMessage(content="你是录音评估引擎。只返回 JSON，不要其他内容。"),
+        HumanMessage(content=eval_prompt),
+    ])
+
+    try:
+        eval_result = _parse_json_response(response.content)
+    except Exception:
+        raise HTTPException(500, "评估失败，LLM 返回格式异常。请重试。")
+
+    topics_covered = eval_result.get("topics_covered", [])
+    overall = eval_result.get("overall", {})
+
+    # Format review
+    review = _format_solo_review(topics_covered, overall)
+
+    # Build scores-like structure for profile update
+    scores = [
+        {"question_id": t.get("id", i + 1), "score": t.get("score"), "difficulty": 3}
+        for i, t in enumerate(topics_covered)
+    ]
+
+    # Save to DB
+    save_review(session_id, review, scores, overall.get("new_weak_points", []), overall)
+
+    # Update profile (topic=None, points carry their own topic labels)
+    await _update_recording_profile(overall, scores, max(len(topics_covered), 1))
+
+    return {
+        "session_id": session_id,
+        "mode": "recording",
+        "recording_mode": "solo",
+        "review": review,
+        "topics_covered": topics_covered,
+        "overall": overall,
+    }
+
+
+async def _update_recording_profile(overall: dict, scores: list, total_items: int = 1):
+    """Update profile from recording analysis — no single topic, points carry their own topic."""
+    valid = []
+    for s in scores:
+        try:
+            valid.append(float(s["score"]))
+        except (TypeError, ValueError, KeyError):
+            pass
+
+    await llm_update_profile(
+        mode="recording",
+        topic=None,
+        new_weak_points=overall.get("new_weak_points", []),
+        new_strong_points=overall.get("new_strong_points", []),
+        topic_mastery={},
+        communication=overall.get("communication_observations", {}),
+        thinking_patterns=overall.get("thinking_patterns"),
+        session_summary=overall.get("summary", ""),
+        avg_score=overall.get("avg_score"),
+        answer_count=len(valid),
+        session_weight=0.3,
+    )
+
+
+def _format_solo_review(topics_covered: list, overall: dict) -> str:
+    """Format solo mode evaluation into a readable review."""
+    lines = [f"## 整体评价\n\n{overall.get('summary', '')}\n\n**平均分: {overall.get('avg_score', '-')}/10**\n"]
+
+    if topics_covered:
+        lines.append("---\n\n## 涉及知识点\n")
+        for t in topics_covered:
+            score = t.get("score", "-")
+            lines.append(f"### {t.get('topic', '未知')} — {score}/10")
+            if t.get("assessment"):
+                lines.append(f"**评价**: {t['assessment']}")
+            if t.get("understanding"):
+                lines.append(f"**理解程度**: {t['understanding']}")
+            if t.get("errors"):
+                lines.append(f"**错误**: {', '.join(t['errors'])}")
+            if t.get("missing"):
+                lines.append(f"**遗漏**: {', '.join(t['missing'])}")
+            lines.append("")
+
+    if overall.get("new_weak_points"):
+        lines.append("---\n\n## 薄弱点")
+        for wp in overall["new_weak_points"]:
+            lines.append(f"- {wp.get('point', wp) if isinstance(wp, dict) else wp}")
+
+    if overall.get("new_strong_points"):
+        lines.append("\n## 亮点")
+        for sp in overall["new_strong_points"]:
+            lines.append(f"- {sp.get('point', sp) if isinstance(sp, dict) else sp}")
+
+    return "\n".join(lines)
 
 
 @router.get("/topics")

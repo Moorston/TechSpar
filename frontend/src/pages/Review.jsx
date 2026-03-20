@@ -48,6 +48,78 @@ function DimensionScores({ dimensionScores, avgScore }) {
   );
 }
 
+function SoloRecordingReview({ topicsCovered, overall }) {
+  const avgScore = overall?.avg_score || "-";
+  return (
+    <>
+      {/* Overall summary */}
+      <div className="bg-card border border-border rounded-2xl px-5 py-6 md:px-8 md:py-7 mb-6">
+        <div className="text-lg font-semibold mb-3">整体评价</div>
+        <div>
+          <span className="inline-block text-[32px] font-bold mr-2" style={{ color: typeof avgScore === "number" ? getScoreColor(avgScore).color : "var(--text)" }}>
+            {avgScore}
+          </span>
+          <span className="text-base text-dim">/10</span>
+        </div>
+        {overall?.summary && (
+          <div className="mt-4 text-[15px] leading-[1.8] text-text">{overall.summary}</div>
+        )}
+      </div>
+
+      {/* Weak & strong points */}
+      {overall?.new_weak_points?.length > 0 && (
+        <>
+          <div className="text-base font-semibold mb-4 mt-2 text-text">薄弱点</div>
+          <div className="flex flex-col gap-1.5 mb-4">
+            {overall.new_weak_points.map((wp, i) => (
+              <div key={i} className="px-3 py-2 rounded-lg text-[13px] text-text bg-red/8 border border-red/20">
+                {typeof wp === "string" ? wp : wp.point || JSON.stringify(wp)}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {overall?.new_strong_points?.length > 0 && (
+        <>
+          <div className="text-base font-semibold mb-4 mt-2 text-text">亮点</div>
+          <div className="flex flex-col gap-1.5 mb-4">
+            {overall.new_strong_points.map((sp, i) => (
+              <div key={i} className="px-3 py-2 rounded-lg text-[13px] text-text bg-green/8 border border-green/20">
+                {typeof sp === "string" ? sp : sp.point || JSON.stringify(sp)}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Topics covered */}
+      {topicsCovered?.length > 0 && (
+        <>
+          <div className="text-base font-semibold mb-4 mt-2 text-text">涉及知识点</div>
+          {topicsCovered.map((t, i) => {
+            const score = t.score;
+            const sc = typeof score === "number" ? getScoreColor(score) : { bg: "var(--bg-hover)", color: "var(--text-dim)" };
+            return (
+              <div key={i} className="bg-card border border-border rounded-xl px-4 py-5 md:px-6 mb-4 animate-fade-in">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[15px] font-medium">{t.topic || "未知知识点"}</span>
+                  <span className="text-sm font-bold px-3 py-1 rounded-lg" style={{ background: sc.bg, color: sc.color }}>
+                    {score ?? "-"}/10
+                  </span>
+                </div>
+                {t.assessment && <div className="text-sm leading-[1.7] text-text mb-2">{t.assessment}</div>}
+                {t.understanding && <div className="text-[13px] text-dim italic mb-1">理解程度: {t.understanding}</div>}
+                {t.errors?.length > 0 && <div className="text-[13px] text-red leading-normal">错误: {t.errors.join("、")}</div>}
+                {t.missing?.length > 0 && <div className="text-[13px] text-dim leading-normal">遗漏: {t.missing.join("、")}</div>}
+              </div>
+            );
+          })}
+        </>
+      )}
+    </>
+  );
+}
+
 function DrillReview({ scores, overall, questions, answers, topic }) {
   const answerMap = {};
   for (const a of (answers || [])) answerMap[a.question_id] = a.answer;
@@ -219,6 +291,8 @@ export default function Review() {
 
   const stateData = location.state || {};
   const isDrill = stateData.mode === "topic_drill";
+  const isRecording = stateData.mode === "recording";
+  const isRecordingDual = isRecording && stateData.recording_mode === "dual";
 
   const [review, setReview] = useState(stateData.review || null);
   const [scores, setScores] = useState(stateData.scores || null);
@@ -228,6 +302,7 @@ export default function Review() {
   const [messages, setMessages] = useState(stateData.messages || []);
   const [mode, setMode] = useState(stateData.mode || null);
   const [topic, setTopic] = useState(stateData.topic || null);
+  const [topicsCovered, setTopicsCovered] = useState(stateData.topics_covered || []);
   const [showTranscript, setShowTranscript] = useState(false);
   const [loading, setLoading] = useState(!review && !scores);
 
@@ -268,16 +343,18 @@ export default function Review() {
     return <div className="text-center py-15 text-dim">加载复盘报告中...</div>;
   }
 
-  const showDrill = isDrill || (mode === "topic_drill" && (scores || questions.length > 0));
+  const showDrill = isDrill || isRecordingDual || (mode === "topic_drill" && (scores || questions.length > 0)) || (mode === "recording" && stateData.recording_mode === "dual");
 
   return (
     <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
       <div className="mb-8">
-        <div className="text-2xl md:text-[28px] font-display font-bold mb-2">{showDrill ? "训练复盘" : "面试复盘"}</div>
+        <div className="text-2xl md:text-[28px] font-display font-bold mb-2">{isRecording ? "录音复盘" : showDrill ? "训练复盘" : "面试复盘"}</div>
         <div className="text-sm text-dim">Session: {sessionId}</div>
       </div>
 
-      {showDrill ? (
+      {isRecording && !isRecordingDual ? (
+        <SoloRecordingReview topicsCovered={topicsCovered} overall={overall} />
+      ) : showDrill ? (
         <DrillReview scores={scores} overall={overall} questions={questions} answers={answers} topic={topic} />
       ) : (
         <>

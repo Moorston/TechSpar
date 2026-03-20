@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, ChevronRight } from "lucide-react";
+import { FileText, ChevronRight, Mic } from "lucide-react";
 import TopicCard from "../components/TopicCard";
 import { getTopics, startInterview, getResumeStatus, uploadResume } from "../api/interview";
 
@@ -95,6 +95,19 @@ export default function Home() {
           <div className="text-xl font-semibold mb-2">专项强化训练</div>
           <div className="text-sm text-dim leading-relaxed">
             选一个领域集中刷题，AI 根据你的回答动态调整难度，精准定位薄弱点。
+          </div>
+        </div>
+
+        <div
+          className="w-full md:w-80 px-6 py-7 rounded-2xl cursor-pointer transition-all text-left border-2 animate-fade-in [animation-delay:0.2s] border-border bg-card hover:border-blue-500/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.08)]"
+          onClick={() => navigate("/recording")}
+        >
+          <div className="inline-block px-2.5 py-1 rounded-md text-xs font-medium mb-3 bg-blue-500/15 text-blue-400">
+            录音分析
+          </div>
+          <div className="text-xl font-semibold mb-2">录音复盘</div>
+          <div className="text-sm text-dim leading-relaxed">
+            上传面试录音或粘贴文字，AI 自动转写分析，帮你复盘每一场真实面试。
           </div>
         </div>
       </div>

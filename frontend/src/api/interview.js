@@ -191,6 +191,33 @@ export async function generateKnowledge(topic) {
   return res.json();
 }
 
+// ── Recording review ──
+
+export async function transcribeRecording(audioBlob, mode = "dual") {
+  const form = new FormData();
+  form.append("file", audioBlob, audioBlob.name || "recording.webm");
+  form.append("mode", mode);
+  const res = await fetch(`${API_BASE}/recording/transcribe`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function analyzeRecording(transcript, recordingMode, company, position) {
+  const body = { transcript, recording_mode: recordingMode };
+  if (company) body.company = company;
+  if (position) body.position = position;
+  const res = await fetch(`${API_BASE}/recording/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getHighFreq(topic) {
   const res = await fetch(`${API_BASE}/knowledge/${topic}/high_freq`);
   return res.json();

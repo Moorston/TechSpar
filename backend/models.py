@@ -12,6 +12,7 @@ from langgraph.graph import add_messages
 class InterviewMode(str, Enum):
     RESUME = "resume"
     TOPIC_DRILL = "topic_drill"
+    RECORDING = "recording"
 
 
 class InterviewPhase(str, Enum):
@@ -63,3 +64,10 @@ class ChatRequest(BaseModel):
 
 class EndDrillRequest(BaseModel):
     answers: list[dict] = Field(default_factory=list)  # [{question_id: int, answer: str}]
+
+
+class RecordingAnalyzeRequest(BaseModel):
+    transcript: str
+    recording_mode: str = "dual"  # "dual" | "solo"
+    company: str | None = None
+    position: str | None = None
