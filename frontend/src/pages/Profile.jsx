@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 
 const API_BASE = "/api";
 
@@ -205,7 +206,7 @@ export default function Profile() {
               >
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="text-sm font-medium">{topic}</span>
-                  <span className="text-xs text-dim">{data.score ?? (data.level ? data.level * 20 : 0)}/100 &rsaquo;</span>
+                  <span className="text-xs text-dim">{data.score ?? (data.level ? data.level * 20 : 0)}/100 <ChevronRight size={14} className="inline align-middle" /></span>
                 </div>
                 <div className="h-1.5 rounded-sm bg-border overflow-hidden">
                   <div

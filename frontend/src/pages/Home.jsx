@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { FileText, ChevronRight } from "lucide-react";
 import TopicCard from "../components/TopicCard";
 import { getTopics, startInterview, getResumeStatus, uploadResume } from "../api/interview";
 
@@ -114,7 +115,7 @@ export default function Home() {
                 className="text-[13px] text-accent-light cursor-pointer"
                 onClick={() => navigate("/profile")}
               >
-                查看画像 &rsaquo;
+                查看画像 <ChevronRight size={14} className="inline align-middle" />
               </span>
             </div>
             <div className="flex flex-wrap gap-4 md:gap-6">
@@ -159,7 +160,7 @@ export default function Home() {
           {resumeFile ? (
             <div className="flex items-center justify-between px-4 py-4 md:px-5 bg-card border border-border rounded-xl">
               <div className="flex items-center gap-2.5 text-sm text-text">
-                <span>📄</span>
+                <FileText size={18} className="text-dim shrink-0" />
                 <span className="font-medium">{resumeFile.filename}</span>
                 <span className="text-xs text-dim">
                   ({(resumeFile.size / 1024).toFixed(0)} KB)
@@ -172,7 +173,7 @@ export default function Home() {
             </div>
           ) : (
             <label className={`flex flex-col items-center gap-2 px-5 py-7 bg-card border-2 border-dashed border-border rounded-xl cursor-pointer transition-colors text-sm text-dim hover:border-accent/50 ${uploading ? "opacity-50" : ""}`}>
-              <span className="text-[28px]">📄</span>
+              <FileText size={28} className="text-dim" />
               <span>{uploading ? "正在上传..." : "点击上传简历（PDF）"}</span>
               <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
             </label>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import { Check, Minus, Star } from "lucide-react";
 import ChatBubble from "../components/ChatBubble";
 import { sendMessage, endInterview } from "../api/interview";
 import useVoiceInput from "../hooks/useVoiceInput";
@@ -188,8 +189,8 @@ export default function Interview() {
                 {questions.map((q) => (
                   <div key={q.id} className="flex items-center gap-2 px-3 py-2 bg-hover rounded-lg text-[13px] text-dim">
                     {answers[q.id]
-                      ? <span className="text-green font-semibold">✓</span>
-                      : <span className="text-dim opacity-50">—</span>}
+                      ? <Check size={14} className="text-green" />
+                      : <Minus size={14} className="text-dim opacity-50" />}
                     <span>Q{q.id}: {q.question.slice(0, 60)}{q.question.length > 60 ? "..." : ""}</span>
                   </div>
                 ))}
@@ -214,8 +215,10 @@ export default function Interview() {
                       <span className="text-xs text-dim bg-hover px-2 py-0.5 rounded">{currentQ.focus_area}</span>
                     )}
                     {currentQ.difficulty && (
-                      <span className="text-[13px] text-dim">
-                        {"★".repeat(currentQ.difficulty)}{"☆".repeat(5 - currentQ.difficulty)}
+                      <span className="flex items-center gap-0.5">
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <Star key={i} size={13} className={i < currentQ.difficulty ? "text-accent-light fill-accent-light" : "text-dim"} />
+                        ))}
                       </span>
                     )}
                   </div>

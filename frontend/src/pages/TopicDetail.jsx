@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
+import { ArrowLeft } from "lucide-react";
 import {
   getProfile,
   getTopics,
@@ -61,7 +62,7 @@ export default function TopicDetail() {
         className="text-sm text-dim cursor-pointer mb-4 inline-block"
         onClick={() => navigate("/profile")}
       >
-        &larr; 返回画像
+        <ArrowLeft size={16} className="inline align-middle -mt-0.5" /> 返回画像
       </div>
 
       {/* Header */}

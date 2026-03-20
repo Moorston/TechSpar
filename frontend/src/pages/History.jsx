@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { X } from "lucide-react";
 import { getHistory, deleteSession, getInterviewTopics } from "../api/interview";
 
 const PAGE_SIZE = 15;
@@ -144,7 +145,7 @@ export default function History() {
                       title="删除"
                       onClick={(e) => handleDelete(e, s.session_id)}
                     >
-                      &#x2715;
+                      <X size={14} />
                     </button>
                   </div>
                 </div>

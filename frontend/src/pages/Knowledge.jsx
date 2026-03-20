@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { Menu, X, Sparkles, ChevronRight, ChevronDown } from "lucide-react";
 import {
   getTopics,
   getCoreKnowledge,
@@ -164,7 +165,7 @@ export default function Knowledge() {
         className="fixed bottom-4 right-4 z-40 md:hidden w-12 h-12 rounded-full bg-accent text-white text-xl flex items-center justify-center shadow-lg"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
-        {sidebarOpen ? "×" : "☰"}
+{sidebarOpen ? <X size={20} /> : <Menu size={20} />}
       </button>
 
       {/* Sidebar */}
@@ -196,7 +197,7 @@ export default function Knowledge() {
                 className="absolute right-2 top-1/2 -translate-y-1/2 bg-transparent border-none text-dim cursor-pointer text-sm px-1.5 py-1 rounded opacity-0 group-hover:opacity-100 transition-all hover:text-red hover:bg-red/10"
                 title="删除领域"
                 onClick={() => handleDeleteTopic(key)}
-              >×</button>
+              ><X size={14} /></button>
             </div>
           ))}
         </div>
@@ -271,7 +272,7 @@ export default function Knowledge() {
                         onClick={handleGenerate}
                         disabled={generating}
                       >
-                        {generating ? "正在生成..." : "✨ AI 生成基础内容"}
+                        {generating ? "正在生成..." : <><Sparkles size={14} className="inline -mt-0.5" /> AI 生成基础内容</>}
                       </button>
                     )}
                   </>
@@ -290,12 +291,12 @@ export default function Knowledge() {
                       >
                         <span>{f.filename}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-dim">{expandedFile === f.filename ? "▼" : "▶"} {(f.content?.length || 0)} 字</span>
+                          <span className="text-xs text-dim flex items-center gap-1">{expandedFile === f.filename ? <ChevronDown size={14} /> : <ChevronRight size={14} />} {(f.content?.length || 0)} 字</span>
                           <button
                             className="bg-transparent border-none text-dim cursor-pointer text-sm px-1.5 py-0.5 rounded opacity-50 transition-all hover:text-red hover:opacity-100"
                             title="删除文件"
                             onClick={(e) => { e.stopPropagation(); handleDeleteFile(f.filename); }}
-                          >&#x2715;</button>
+                          ><X size={14} /></button>
                         </div>
                       </div>
                       {expandedFile === f.filename && (
