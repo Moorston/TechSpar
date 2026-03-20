@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import { getTopics, getGraphData } from "../api/interview";
+import { getTopicIcon } from "../utils/topicIcons";
 
 const SIMILARITY_THRESHOLD = 0.65;
 
@@ -114,7 +115,7 @@ export default function Graph() {
             }`}
             onClick={() => handleSelectTopic(key)}
           >
-            {info.icon} {info.name}
+            <span className="inline-flex align-middle mr-1">{getTopicIcon(info.icon, 14)}</span>{info.name}
           </button>
         ))}
       </div>

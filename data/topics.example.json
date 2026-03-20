@@ -1,67 +1,67 @@
 {
   "python": {
     "name": "Python 核心",
-    "icon": "🐍",
+    "icon": "Terminal",
     "dir": "01_Python核心"
   },
   "llm": {
     "name": "LLM 基础",
-    "icon": "🧠",
+    "icon": "Brain",
     "dir": "02_LLM基础"
   },
   "agent": {
     "name": "Agent 架构",
-    "icon": "🤖",
+    "icon": "Bot",
     "dir": "03_Agent架构"
   },
   "rag": {
     "name": "RAG",
-    "icon": "📚",
+    "icon": "Library",
     "dir": "04_RAG"
   },
   "function_calling": {
     "name": "Function Calling",
-    "icon": "🔧",
+    "icon": "Wrench",
     "dir": "05_Function_Calling"
   },
   "mcp": {
     "name": "MCP",
-    "icon": "🔌",
+    "icon": "Plug",
     "dir": "06_MCP"
   },
   "langchain": {
     "name": "LangChain / LangGraph",
-    "icon": "🔗",
+    "icon": "Link",
     "dir": "07_LangChain_LangGraph"
   },
   "prompt": {
     "name": "Prompt Engineering",
-    "icon": "✍️",
+    "icon": "Pencil",
     "dir": "08_Prompt_Engineering"
   },
   "database": {
     "name": "数据库与中间件",
-    "icon": "🗄️",
+    "icon": "Database",
     "dir": "09_数据库与中间件"
   },
   "memory": {
     "name": "记忆管理",
-    "icon": "💾",
+    "icon": "HardDrive",
     "dir": "10_记忆管理"
   },
   "backend": {
     "name": "后端八股",
-    "icon": "⚙️",
+    "icon": "Settings",
     "dir": "11_后端八股"
   },
   "leetcode": {
     "name": "算法与数据结构",
-    "icon": "🧮",
+    "icon": "Code",
     "dir": "leetcode"
   },
   "docker": {
     "name": "容器化",
-    "icon": "📝",
+    "icon": "Container",
     "dir": "docker"
   }
 }

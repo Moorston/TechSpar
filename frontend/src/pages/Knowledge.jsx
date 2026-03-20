@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Menu, X, Sparkles, ChevronRight, ChevronDown } from "lucide-react";
+import { getTopicIcon, ICON_OPTIONS } from "../utils/topicIcons";
 import {
   getTopics,
   getCoreKnowledge,
@@ -36,7 +37,7 @@ export default function Knowledge() {
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [newTopicKey, setNewTopicKey] = useState("");
   const [newTopicName, setNewTopicName] = useState("");
-  const [newTopicIcon, setNewTopicIcon] = useState("📝");
+  const [newTopicIcon, setNewTopicIcon] = useState("FileText");
 
   const refreshTopics = useCallback(async () => {
     const t = await getTopics();
@@ -136,7 +137,7 @@ export default function Knowledge() {
     if (!key || !name) return;
     try {
       await createTopic(key, name, newTopicIcon);
-      setNewTopicKey(""); setNewTopicName(""); setNewTopicIcon("📝");
+      setNewTopicKey(""); setNewTopicName(""); setNewTopicIcon("FileText");
       setShowAddTopic(false);
       await refreshTopics();
       setSelected(key);
@@ -192,7 +193,7 @@ export default function Knowledge() {
                   ${selected === key ? "bg-hover text-text" : "bg-transparent text-dim hover:bg-hover"}`}
                 onClick={() => selectTopic(key)}
               >
-                <span>{topics[key]?.icon || "📝"}</span>
+                <span className="text-dim">{getTopicIcon(topics[key]?.icon, 16)}</span>
                 <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{topics[key]?.name || key}</span>
               </button>
               <button
@@ -224,11 +225,25 @@ export default function Knowledge() {
               <input className="w-full px-3 py-2.5 rounded-lg border border-border bg-bg text-text text-sm" placeholder="Docker 容器化" value={newTopicName} onChange={(e) => setNewTopicName(e.target.value)} />
             </div>
             <div className="mb-3.5">
-              <label className="text-[13px] text-dim mb-1.5 block">图标 Emoji</label>
-              <input className="w-20 px-3 py-2.5 rounded-lg border border-border bg-bg text-text text-sm" value={newTopicIcon} onChange={(e) => setNewTopicIcon(e.target.value)} maxLength={4} />
+              <label className="text-[13px] text-dim mb-1.5 block">图标</label>
+              <div className="grid grid-cols-8 gap-1.5">
+                {ICON_OPTIONS.map(({ name, Icon }) => ( // eslint-disable-line no-unused-vars
+                  <button
+                    key={name}
+                    type="button"
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
+                      newTopicIcon === name ? "bg-accent/20 text-accent-light border border-accent" : "bg-hover text-dim border border-transparent hover:text-text"
+                    }`}
+                    onClick={() => setNewTopicIcon(name)}
+                    title={name}
+                  >
+                    <Icon size={16} />
+                  </button>
+                ))}
+              </div>
             </div>
             <div className="flex gap-2.5 justify-end mt-6">
-              <button className="px-5 py-2 rounded-lg border border-border bg-hover text-text text-[13px] cursor-pointer" onClick={() => { setShowAddTopic(false); setNewTopicKey(""); setNewTopicName(""); setNewTopicIcon("📝"); }}>取消</button>
+              <button className="px-5 py-2 rounded-lg border border-border bg-hover text-text text-[13px] cursor-pointer" onClick={() => { setShowAddTopic(false); setNewTopicKey(""); setNewTopicName(""); setNewTopicIcon("FileText"); }}>取消</button>
               <button className="px-5 py-2 rounded-lg bg-accent text-white text-[13px] cursor-pointer disabled:opacity-40" onClick={handleAddTopic} disabled={!newTopicKey.trim() || !newTopicName.trim()}>添加</button>
             </div>
           </div>

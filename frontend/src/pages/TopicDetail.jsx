@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { ArrowLeft } from "lucide-react";
+import { getTopicIcon } from "../utils/topicIcons";
 import {
   getProfile,
   getTopics,
@@ -67,7 +68,7 @@ export default function TopicDetail() {
 
       {/* Header */}
       <div className="flex items-center gap-3 md:gap-4 mb-8">
-        <div className="text-4xl">{topicInfo?.icon || "📝"}</div>
+        <div className="text-dim">{getTopicIcon(topicInfo?.icon, 36)}</div>
         <div className="flex-1">
           <div className="text-2xl md:text-[28px] font-display font-bold">{topicInfo?.name || topic}</div>
           <div className="text-sm text-dim mt-1">
