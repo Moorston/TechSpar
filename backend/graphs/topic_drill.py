@@ -107,6 +107,32 @@ def generate_drill_questions(topic: str, user_id: str) -> list[dict]:
         prefix = "[到期复习] " if w in due_points else ""
         weak_lines.append(f"- {prefix}{w}")
 
+    # Difficulty range and question strategy based on mastery
+    mastery_score = drill_ctx["mastery_score"]
+    if mastery_score <= 30:
+        diff_min, diff_max = 1, 3
+        question_strategy = (
+            "当前为新手阶段（掌握度 0-30），题目策略：\n"
+            "- 70% 基础概念题 + 对比辨析题，30% 简单应用题\n"
+            "- 基础概念题考的是「是什么」和「为什么」：核心定义、基本原理、常见术语的含义\n"
+            "- 不要考底层实现细节、内核机制、源码级原理等深度概念\n"
+            "- 不要出复杂场景设计题或系统架构题，先确认基础概念是否扎实\n"
+            "- 概念题要考理解而非背诵——问「为什么这样设计」而非「请背诵定义」"
+        )
+    elif mastery_score <= 60:
+        diff_min, diff_max = 2, 4
+        question_strategy = (
+            "当前有基础（掌握度 30-60），题目策略：\n"
+            "- 40% 深度概念题（底层原理、实现机制、边界行为），40% 场景应用题，20% 设计权衡题\n"
+            "- 可以考底层原理和内部机制，但场景题控制在单组件/单服务范围，不需要大规模系统设计"
+        )
+    else:
+        diff_min, diff_max = 3, 5
+        question_strategy = (
+            "当前已熟练（掌握度 60-100），题目策略：\n"
+            "- 20% 概念题（考边界 case 和底层原理），80% 场景设计 + 系统权衡题"
+        )
+
     prompt = DRILL_QUESTION_GEN_PROMPT.format(
         topic_name=topic_name,
         knowledge_context=knowledge_ctx,
@@ -116,6 +142,9 @@ def generate_drill_questions(topic: str, user_id: str) -> list[dict]:
         high_freq_questions=high_freq,
         recent_questions="\n".join(f"- {q}" for q in drill_ctx["recent_questions"][-10:]) or "暂无",
         past_insights=past_insights_text,
+        question_strategy=question_strategy,
+        diff_min=diff_min,
+        diff_max=diff_max,
     )
 
     llm = get_langchain_llm()

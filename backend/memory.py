@@ -183,11 +183,8 @@ def get_topic_context_for_drill(topic: str, user_id: str) -> dict:
 
     mastery = profile.get("topic_mastery", {}).get(topic, {})
     mastery_score = mastery.get("score", mastery.get("level", 0) * 20)
-    mastery_info = (
-        f"{mastery_score}/100 — {mastery.get('notes', '')}"
-        if mastery_score > 0
-        else "新领域，暂无历史数据"
-    )
+    mastery_notes = mastery.get("notes", "新领域，暂无历史数据" if mastery_score == 0 else "")
+    mastery_info = f"{mastery_score}/100 — {mastery_notes}"
 
     # Weak points for this topic
     topic_weak = [
