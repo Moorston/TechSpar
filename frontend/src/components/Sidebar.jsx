@@ -33,7 +33,7 @@ export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.classList.toggle("dark", theme === "dark");
     localStorage.setItem("theme", theme);
   }, [theme]);
 

@@ -58,7 +58,7 @@ export default function Graph() {
   const paintNode = useCallback((node, ctx) => {
     const r = 5 + (node.difficulty || 3) * 1.2;
     const color = scoreToColor(node.score);
-    const isLight = document.documentElement.getAttribute("data-theme") === "light";
+    const isLight = !document.documentElement.classList.contains("dark");
     const textColor = isLight ? "#18181B" : "#FAFAF9";
 
     if (hoveredNode === node) {
