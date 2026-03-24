@@ -13,6 +13,7 @@ const PAGE_SIZE = 15;
 const MODE_BADGES = {
   resume: { text: "简历面试", variant: "default" },
   topic_drill: { text: "专项训练", variant: "success" },
+  jd_prep: { text: "JD 备面", variant: "blue" },
   recording: { text: "录音复盘", variant: "blue" },
 };
 
@@ -20,6 +21,7 @@ const FILTER_OPTIONS = [
   { key: "all", label: "全部" },
   { key: "resume", label: "简历面试" },
   { key: "topic_drill", label: "专项训练" },
+  { key: "jd_prep", label: "JD 备面" },
   { key: "recording", label: "录音复盘" },
 ];
 
@@ -101,7 +103,7 @@ export default function History() {
           </Button>
         ))}
 
-        {modeFilter !== "resume" && topics.length > 0 && (
+        {modeFilter !== "resume" && modeFilter !== "jd_prep" && topics.length > 0 && (
           <>
             <div className="w-px h-5 bg-border mx-1" />
             <select
@@ -125,6 +127,8 @@ export default function History() {
           <div className="flex flex-col gap-2.5 stagger-children">
             {sessions.map((s) => {
               const badge = MODE_BADGES[s.mode] || MODE_BADGES.resume;
+              const title = s.meta?.position || s.topic || "综合";
+              const subtitle = s.meta?.company || "";
 
               return (
                 <Card
@@ -135,7 +139,8 @@ export default function History() {
                   <CardContent className="p-3.5 md:p-4 flex items-center justify-between">
                     <div className="flex items-center gap-2 md:gap-2.5 min-w-0 flex-1 flex-wrap">
                       <Badge variant={badge.variant}>{badge.text}</Badge>
-                      {s.topic && <span className="text-sm text-text font-medium truncate">{s.topic}</span>}
+                      <span className="text-sm text-text font-medium truncate">{title}</span>
+                      {subtitle && <span className="text-xs text-dim truncate">{subtitle}</span>}
                       <span className="text-xs text-dim shrink-0 hidden md:inline">#{s.session_id}</span>
                     </div>
                     <div className="flex items-center gap-2 md:gap-3 shrink-0">

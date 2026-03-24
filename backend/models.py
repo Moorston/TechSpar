@@ -12,6 +12,7 @@ from langgraph.graph import add_messages
 class InterviewMode(str, Enum):
     RESUME = "resume"
     TOPIC_DRILL = "topic_drill"
+    JD_PREP = "jd_prep"
     RECORDING = "recording"
 
 
@@ -55,6 +56,17 @@ class TopicDrillState(TypedDict, total=False):
 class StartInterviewRequest(BaseModel):
     mode: InterviewMode
     topic: str | None = None
+
+
+class JobPrepPreviewRequest(BaseModel):
+    jd_text: str
+    company: str | None = None
+    position: str | None = None
+    use_resume: bool = True
+
+
+class JobPrepStartRequest(JobPrepPreviewRequest):
+    preview_data: dict | None = None
 
 
 class ChatRequest(BaseModel):

@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Sun, Moon, ArrowRight, Brain, Target, Mic, BarChart3, Repeat, BookOpen } from "lucide-react";
+import { Sun, Moon, ArrowRight, Brain, Target, Mic, BarChart3, Repeat, BookOpen, BriefcaseBusiness } from "lucide-react";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,12 @@ const FEATURES = [
     color: "text-teal bg-teal/12",
     title: "录音复盘",
     desc: "上传面试录音或粘贴文字，AI 自动转写分析，复盘每一场真实面试。",
+  },
+  {
+    icon: <BriefcaseBusiness size={20} />,
+    color: "text-blue-400 bg-blue-500/12",
+    title: "JD 定向备面",
+    desc: "贴入岗位 JD，AI 拆解考察重点，结合简历生成高概率追问和岗位匹配复盘。",
   },
 ];
 
@@ -134,7 +140,7 @@ export default function Landing() {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-children">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 stagger-children">
             {FEATURES.map((f) => (
               <Card key={f.title} className="hover:border-primary/30 hover:-translate-y-0.5 hover:shadow-md transition-all">
                 <CardContent className="p-5">

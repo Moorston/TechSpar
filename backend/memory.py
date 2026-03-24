@@ -52,6 +52,7 @@ DEFAULT_PROFILE = {
         "total_sessions": 0,
         "resume_sessions": 0,
         "drill_sessions": 0,
+        "job_prep_sessions": 0,
         "avg_score": 0,
         "score_history": [],  # [{date, mode, topic, avg_score}]
     },
@@ -497,8 +498,10 @@ def _update_stats(
     stats["total_sessions"] = stats.get("total_sessions", 0) + 1
     if mode == "resume":
         stats["resume_sessions"] = stats.get("resume_sessions", 0) + 1
-    else:
+    elif mode == "topic_drill":
         stats["drill_sessions"] = stats.get("drill_sessions", 0) + 1
+    elif mode == "jd_prep":
+        stats["job_prep_sessions"] = stats.get("job_prep_sessions", 0) + 1
 
     if answer_count:
         stats["total_answers"] = stats.get("total_answers", 0) + answer_count
@@ -513,14 +516,16 @@ def _update_stats(
         # Per-mode rolling averages
         drill_scores = [h["avg_score"] for h in history if h.get("mode") == "topic_drill" and h.get("avg_score")][-20:]
         resume_scores = [h["avg_score"] for h in history if h.get("mode") == "resume" and h.get("avg_score")][-10:]
+        job_prep_scores = [h["avg_score"] for h in history if h.get("mode") == "jd_prep" and h.get("avg_score")][-10:]
 
         if drill_scores:
             stats["drill_avg_score"] = round(sum(drill_scores) / len(drill_scores), 1)
         if resume_scores:
             stats["resume_avg_score"] = round(sum(resume_scores) / len(resume_scores), 1)
+        if job_prep_scores:
+            stats["job_prep_avg_score"] = round(sum(job_prep_scores) / len(job_prep_scores), 1)
 
-        # Combined: proportional weighted average
-        all_recent = drill_scores + resume_scores
+        all_recent = [h["avg_score"] for h in history if h.get("avg_score")][-30:]
         if all_recent:
             stats["avg_score"] = round(sum(all_recent) / len(all_recent), 1)
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileText, ChevronRight, Sparkles, Target, BookOpen, Mic, TrendingUp, Zap } from "lucide-react";
+import { FileText, ChevronRight, Sparkles, Target, BookOpen, Mic, TrendingUp, Zap, BriefcaseBusiness } from "lucide-react";
 import TopicCard from "../components/TopicCard";
 import { getTopics, startInterview, getResumeStatus, uploadResume, getProfile } from "../api/interview";
 import { cn } from "@/lib/utils";
@@ -31,6 +31,17 @@ const MODE_CARDS = [
     title: "专项强化训练",
     desc: "选一个领域集中刷题，AI 根据你的回答动态调整难度，精准定位薄弱点。",
     tag: "针对强化",
+  },
+  {
+    mode: "job_prep",
+    icon: BriefcaseBusiness,
+    gradient: "from-sky-500/20 via-cyan-500/10 to-transparent",
+    iconBg: "bg-sky-500/15 text-sky-400",
+    borderActive: "border-sky-500/50",
+    badgeVariant: "blue",
+    title: "JD 定向备面",
+    desc: "贴入岗位 JD，AI 拆解岗位重点，结合简历生成高概率问题和岗位匹配复盘。",
+    tag: "岗位针对",
   },
   {
     mode: "recording",
@@ -85,6 +96,7 @@ export default function Home() {
 
   const handleStart = async () => {
     if (!mode) return;
+    if (mode === "job_prep") { navigate("/job-prep"); return; }
     if (mode === "recording") { navigate("/recording"); return; }
     if (mode === "topic_drill" && !selectedTopic) return;
     setLoading(true);
@@ -98,7 +110,7 @@ export default function Home() {
     }
   };
 
-  const canStart = (mode === "resume" && resumeFile) || (mode === "topic_drill" && selectedTopic) || mode === "recording";
+  const canStart = (mode === "resume" && resumeFile) || (mode === "topic_drill" && selectedTopic) || mode === "recording" || mode === "job_prep";
 
   function renderStats() {
     if (pageLoading) {
@@ -190,7 +202,7 @@ export default function Home() {
       </div>
 
       {/* Mode cards */}
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6 mb-10 md:mb-12 w-full md:w-auto md:justify-center stagger-children">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 mb-10 md:mb-12 w-full max-w-[1320px] stagger-children">
         {MODE_CARDS.map((card) => {
           const Icon = card.icon;
           const isActive = mode === card.mode;
@@ -198,7 +210,7 @@ export default function Home() {
             <div
               key={card.mode}
               className={cn(
-                "w-full md:w-80 relative overflow-hidden cursor-pointer transition-all text-left border-2 rounded-xl",
+                "w-full relative overflow-hidden cursor-pointer transition-all text-left border-2 rounded-xl",
                 isActive
                   ? `border-current ${card.borderActive} bg-card shadow-lg`
                   : "border-border bg-card hover:border-border hover:shadow-md hover:-translate-y-0.5"
@@ -298,7 +310,7 @@ export default function Home() {
             disabled={!canStart || loading}
             onClick={handleStart}
           >
-            {loading ? "正在初始化面试..." : "开始面试"}
+            {loading ? "正在初始化面试..." : mode === "job_prep" ? "进入 JD 备面" : "开始面试"}
           </Button>
         </div>
       )}

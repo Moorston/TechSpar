@@ -9,8 +9,14 @@ from langchain_core.messages import HumanMessage, AIMessage
 
 from backend.models import (
     StartInterviewRequest, ChatRequest, EndDrillRequest,
+    JobPrepPreviewRequest, JobPrepStartRequest,
     RecordingAnalyzeRequest, RegisterRequest, LoginRequest,
     InterviewMode, InterviewPhase,
+)
+from backend.graphs.job_prep import (
+    generate_job_prep_preview,
+    generate_job_prep_questions,
+    evaluate_job_prep_answers,
 )
 from backend.graphs.resume_interview import compile_resume_interview
 from backend.graphs.topic_drill import (
@@ -46,6 +52,8 @@ router = APIRouter(prefix="/api")
 _graphs: dict[str, dict] = {}
 # Drill session data (questions stored for evaluation at end)
 _drill_sessions: dict[str, dict] = {}
+# JD prep session data (questions + preview stored for evaluation at end)
+_job_prep_sessions: dict[str, dict] = {}
 
 
 @app.on_event("startup")
@@ -551,6 +559,91 @@ async def generate_retrospective(topic: str, user_id: str = Depends(get_current_
 
 # ── Interview ──
 
+@router.post("/job-prep/preview")
+async def job_prep_preview(req: JobPrepPreviewRequest, user_id: str = Depends(get_current_user)):
+    """Analyze a JD and candidate fit before starting targeted practice."""
+    jd_text = req.jd_text.strip()
+    if len(jd_text) < 50:
+        raise HTTPException(400, "JD 内容太短，无法分析。")
+
+    try:
+        preview = generate_job_prep_preview(
+            jd_text,
+            user_id,
+            company=req.company,
+            position=req.position,
+            use_resume=req.use_resume,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
+
+    return {"preview": preview}
+
+
+@router.post("/job-prep/start")
+async def job_prep_start(req: JobPrepStartRequest, user_id: str = Depends(get_current_user)):
+    """Start a JD-targeted mock interview session."""
+    jd_text = req.jd_text.strip()
+    if len(jd_text) < 50:
+        raise HTTPException(400, "JD 内容太短，无法生成训练。")
+
+    preview = req.preview_data if isinstance(req.preview_data, dict) else None
+    if not preview:
+        try:
+            preview = generate_job_prep_preview(
+                jd_text,
+                user_id,
+                company=req.company,
+                position=req.position,
+                use_resume=req.use_resume,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(500, str(exc))
+
+    try:
+        questions = generate_job_prep_questions(
+            jd_text,
+            preview,
+            user_id,
+            use_resume=req.use_resume,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
+
+    session_id = str(uuid.uuid4())[:8]
+    meta = {
+        "company": preview.get("company") or (req.company or "").strip(),
+        "position": preview.get("position") or (req.position or "").strip() or "JD 备面",
+        "jd_excerpt": jd_text[:1500],
+        "use_resume": req.use_resume,
+        "preview": preview,
+    }
+
+    create_session(
+        session_id,
+        InterviewMode.JD_PREP.value,
+        questions=questions,
+        meta=meta,
+        user_id=user_id,
+    )
+    _job_prep_sessions[session_id] = {
+        "questions": questions,
+        "preview": preview,
+        "meta": meta,
+        "user_id": user_id,
+    }
+
+    return {
+        "session_id": session_id,
+        "mode": InterviewMode.JD_PREP.value,
+        "questions": questions,
+        "preview": preview,
+        "company": meta["company"],
+        "position": meta["position"],
+        "meta": meta,
+    }
+
+
 @router.post("/interview/start")
 async def start_interview(req: StartInterviewRequest, user_id: str = Depends(get_current_user)):
     """Start a new interview session."""
@@ -575,7 +668,7 @@ async def start_interview(req: StartInterviewRequest, user_id: str = Depends(get
             "topic": req.topic,
             "questions": questions,
         }
-    else:
+    if req.mode == InterviewMode.RESUME:
         # ── Resume mode: LangGraph interactive interview ──
         graph = compile_resume_interview(user_id)
         initial_state = {}
@@ -603,6 +696,8 @@ async def start_interview(req: StartInterviewRequest, user_id: str = Depends(get
             "topic": req.topic,
             "message": ai_message,
         }
+
+    raise HTTPException(400, f"Unsupported mode for this endpoint: {req.mode.value}")
 
 
 @router.post("/interview/chat")
@@ -699,6 +794,45 @@ async def end_interview(session_id: str, body: EndDrillRequest = None,
             "review": review,
             "scores": scores,
             "overall": overall,
+        }
+
+    # ── JD prep mode: batch evaluate against job requirements ──
+    if session_id in _job_prep_sessions:
+        entry = _job_prep_sessions[session_id]
+        if entry.get("user_id") != user_id:
+            raise HTTPException(403, "Access denied.")
+
+        questions = entry["questions"]
+        preview = entry["preview"]
+        meta = entry["meta"]
+        answers = body.answers if body and body.answers else []
+
+        save_drill_answers(session_id, answers, user_id=user_id)
+
+        eval_result = evaluate_job_prep_answers(questions, answers, preview, user_id)
+        scores = eval_result.get("scores", [])
+        overall = eval_result.get("overall", {})
+
+        q_diff = {q["id"]: q.get("difficulty", 3) for q in questions}
+        for s in scores:
+            s.setdefault("difficulty", q_diff.get(s.get("question_id"), 3))
+
+        review = _format_job_prep_review(questions, answers, scores, overall, meta)
+        save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
+
+        await _update_job_prep_profile(overall, scores, len(questions), meta, user_id)
+
+        del _job_prep_sessions[session_id]
+
+        return {
+            "session_id": session_id,
+            "mode": InterviewMode.JD_PREP.value,
+            "review": review,
+            "scores": scores,
+            "overall": overall,
+            "meta": meta,
+            "position": meta.get("position"),
+            "company": meta.get("company"),
         }
 
     # ── Resume mode: existing flow ──
@@ -811,6 +945,78 @@ def _format_drill_review(questions, answers, scores, overall) -> str:
     return "\n".join(lines)
 
 
+def _format_job_prep_review(questions, answers, scores, overall, meta) -> str:
+    """Format JD prep evaluation into a readable review string."""
+    answer_map = {a["question_id"]: a["answer"] for a in answers}
+    score_map = {s["question_id"]: s for s in scores}
+
+    title = meta.get("position") or "目标岗位"
+    company = meta.get("company")
+    heading = f"{company} / {title}" if company else title
+
+    lines = [f"## 岗位画像\n\n**目标岗位**: {heading}\n"]
+
+    if meta.get("preview", {}).get("role_summary"):
+        lines.append(f"\n**岗位本质**: {meta['preview']['role_summary']}\n")
+
+    lines.append(f"\n## 整体评价\n\n{overall.get('summary', '')}\n")
+    lines.append(f"\n**平均分: {overall.get('avg_score', '-')}/10**")
+
+    if overall.get("role_fit_summary"):
+        lines.append(f"\n**岗位匹配度**: {overall['role_fit_summary']}")
+
+    if overall.get("interviewer_hotspots"):
+        lines.append("\n\n## 高风险追问点")
+        for item in overall["interviewer_hotspots"]:
+            lines.append(f"- {item}")
+
+    if overall.get("prep_priorities"):
+        lines.append("\n## 面试前优先补强")
+        for item in overall["prep_priorities"]:
+            lines.append(f"- {item}")
+
+    lines.append("\n---\n\n## 逐题复盘\n")
+    for q in questions:
+        qid = q["id"]
+        s = score_map.get(qid, {})
+        answer = answer_map.get(qid, "")
+
+        if not answer:
+            lines.append(f"### Q{qid} ({q.get('category', '未分类')}) — 未作答")
+            lines.append(f"**题目**: {q['question']}\n")
+            continue
+
+        lines.append(
+            f"### Q{qid} ({q.get('category', '未分类')} / {q.get('focus_area', '')})"
+            f" — {s.get('score', '-')}/10"
+        )
+        lines.append(f"**题目**: {q['question']}")
+        lines.append(f"**你的回答**: {answer}")
+        if s.get("role_expectation"):
+            lines.append(f"**岗位在看什么**: {s['role_expectation']}")
+        if s.get("assessment"):
+            lines.append(f"**点评**: {s['assessment']}")
+        if s.get("improvement"):
+            lines.append(f"**改进建议**: {s['improvement']}")
+        if s.get("understanding"):
+            lines.append(f"**理解程度**: {s['understanding']}")
+        if s.get("key_missing"):
+            lines.append(f"**遗漏关键点**: {', '.join(s['key_missing'])}")
+        lines.append("")
+
+    if overall.get("new_weak_points"):
+        lines.append("---\n\n## 薄弱点")
+        for wp in overall["new_weak_points"]:
+            lines.append(f"- {wp.get('point', wp) if isinstance(wp, dict) else wp}")
+
+    if overall.get("new_strong_points"):
+        lines.append("\n## 亮点")
+        for sp in overall["new_strong_points"]:
+            lines.append(f"- {sp.get('point', sp) if isinstance(sp, dict) else sp}")
+
+    return "\n".join(lines)
+
+
 async def _update_drill_profile(topic: str, overall: dict, scores: list,
                                 total_questions: int, user_id: str):
     """Update profile from drill evaluation — Mem0-style LLM update."""
@@ -844,6 +1050,41 @@ async def _update_drill_profile(topic: str, overall: dict, scores: list,
         avg_score=overall.get("avg_score"),
         answer_count=len(scores),
         session_weight=session_weight,
+    )
+
+
+async def _update_job_prep_profile(overall: dict, scores: list, total_questions: int,
+                                   meta: dict, user_id: str):
+    """Update profile from JD prep evaluation."""
+    valid = []
+    for s in scores:
+        try:
+            valid.append(float(s["score"]))
+        except (TypeError, ValueError, KeyError):
+            pass
+
+    topic = meta.get("position") or "JD 备面"
+    coverage = len(valid) / total_questions if total_questions else 0
+    session_weight = max(0.25, coverage * 0.5)
+    summary = overall.get("summary", "")
+    role_fit = overall.get("role_fit_summary", "")
+    if role_fit:
+        summary = f"{summary}\n\n岗位匹配度判断: {role_fit}".strip()
+
+    await llm_update_profile(
+        mode="jd_prep",
+        topic=topic,
+        new_weak_points=overall.get("new_weak_points", []),
+        new_strong_points=overall.get("new_strong_points", []),
+        topic_mastery={},
+        communication=overall.get("communication_observations", {}),
+        user_id=user_id,
+        thinking_patterns=overall.get("thinking_patterns"),
+        session_summary=summary,
+        avg_score=overall.get("avg_score"),
+        answer_count=len(valid),
+        session_weight=session_weight,
+        dimension_scores=overall.get("dimension_scores"),
     )
 
 

@@ -83,6 +83,26 @@ export async function startInterview(mode, topic = null) {
   return res.json();
 }
 
+export async function previewJobPrep(payload) {
+  const res = await authFetch(`${API_BASE}/job-prep/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function startJobPrep(payload) {
+  const res = await authFetch(`${API_BASE}/job-prep/start`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function sendMessage(sessionId, message) {
   const res = await authFetch(`${API_BASE}/interview/chat`, {
     method: "POST",

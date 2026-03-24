@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 
 export default function Interview() {
   const { sessionId } = useParams();
@@ -19,7 +18,8 @@ export default function Interview() {
   const textareaRef = useRef(null);
 
   const initData = location.state || {};
-  const isDrill = initData.mode === "topic_drill";
+  const isBatchMode = initData.mode === "topic_drill" || initData.mode === "jd_prep";
+  const isJobPrep = initData.mode === "jd_prep";
 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
@@ -42,18 +42,18 @@ export default function Interview() {
   });
 
   useEffect(() => {
-    if (!isDrill && initData.message) {
+    if (!isBatchMode && initData.message) {
       setMessages([{ role: "assistant", content: initData.message }]);
     }
   }, []);
 
   useEffect(() => {
-    if (!isDrill) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, sending, isDrill]);
+    if (!isBatchMode) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, sending, isBatchMode]);
 
   useEffect(() => {
-    if (isDrill) textareaRef.current?.focus();
-  }, [currentIndex, isDrill]);
+    if (isBatchMode) textareaRef.current?.focus();
+  }, [currentIndex, isBatchMode]);
 
   const currentQ = questions[currentIndex];
   const totalQ = questions.length;
@@ -81,7 +81,7 @@ export default function Interview() {
     setCurrentIndex((i) => i - 1);
   };
 
-  const handleEndDrill = async () => {
+  const handleEndBatch = async () => {
     setSubmitting(true);
     try {
       const answerList = questions.map((q) => ({
@@ -90,7 +90,18 @@ export default function Interview() {
       }));
       const data = await endInterview(sessionId, answerList);
       navigate(`/review/${sessionId}`, {
-        state: { review: data.review, scores: data.scores, overall: data.overall, questions, answers: answerList, mode: "topic_drill", topic: initData.topic },
+        state: {
+          review: data.review,
+          scores: data.scores,
+          overall: data.overall,
+          questions,
+          answers: answerList,
+          mode: initData.mode,
+          topic: initData.topic,
+          company: initData.company,
+          position: initData.position,
+          meta: data.meta || initData.meta,
+        },
       });
     } catch (err) {
       alert("评估失败: " + err.message);
@@ -141,13 +152,15 @@ export default function Interview() {
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      isDrill ? handleDrillSubmit() : handleSend();
+      isBatchMode ? handleDrillSubmit() : handleSend();
     }
   };
 
-  const modeBadge = isDrill
-    ? { text: "专项训练", variant: "success" }
-    : { text: "简历面试", variant: "default" };
+  const modeBadge = isJobPrep
+    ? { text: "JD 备面", variant: "blue" }
+    : initData.mode === "topic_drill"
+      ? { text: "专项训练", variant: "success" }
+      : { text: "简历面试", variant: "default" };
 
   const MicButton = ({ voice }) => (
     <button
@@ -169,17 +182,23 @@ export default function Interview() {
     </button>
   );
 
-  if (isDrill) {
+  if (isBatchMode) {
     return (
       <div className="flex-1 flex flex-col h-full">
         <div className="flex items-center justify-between px-4 py-3 md:px-6 border-b border-border bg-card">
           <div className="flex items-center gap-2 md:gap-3 flex-wrap">
             <Badge variant={modeBadge.variant}>{modeBadge.text}</Badge>
-            {initData.topic && <span className="text-sm text-dim">{initData.topic}</span>}
+            {isJobPrep
+              ? (
+                <span className="text-sm text-dim">
+                  {initData.company ? `${initData.company} · ` : ""}{initData.position || "目标岗位"}
+                </span>
+              )
+              : initData.topic && <span className="text-sm text-dim">{initData.topic}</span>}
             <span className="text-[13px] text-dim">{answeredCount}/{totalQ} 已答</span>
           </div>
-          <Button variant="destructive" size="sm" onClick={handleEndDrill} disabled={submitting}>
-            {submitting ? "评估中..." : finished ? "查看评估" : "结束训练"}
+          <Button variant="destructive" size="sm" onClick={handleEndBatch} disabled={submitting}>
+            {submitting ? "评估中..." : finished ? "查看评估" : isJobPrep ? "结束备面" : "结束训练"}
           </Button>
         </div>
 
@@ -191,18 +210,20 @@ export default function Interview() {
                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-dot [animation-delay:0.2s]" />
                 <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-dot [animation-delay:0.4s]" />
               </div>
-              <span>正在批量评估你的回答...</span>
-              <span className="text-[13px] text-dim opacity-60">AI 将对 {totalQ} 道题逐一点评</span>
+              <span>{isJobPrep ? "正在生成岗位匹配复盘..." : "正在批量评估你的回答..."}</span>
+              <span className="text-[13px] text-dim opacity-60">
+                {isJobPrep ? "AI 会结合 JD 判断你的真实匹配度" : `AI 将对 ${totalQ} 道题逐一点评`}
+              </span>
             </div>
           ) : finished ? (
             <div className="w-full max-w-[720px]">
               <Card className="mb-5">
                 <CardContent className="p-6 md:p-8 text-center">
-                  <div className="text-xl font-semibold mb-3">训练完成</div>
+                  <div className="text-xl font-semibold mb-3">{isJobPrep ? "定向备面完成" : "训练完成"}</div>
                   <div className="text-[15px] text-dim mb-6 leading-relaxed">
                     共 {totalQ} 题，已回答 {answeredCount} 题，跳过 {totalQ - answeredCount} 题
                   </div>
-                  <Button variant="gradient" size="lg" className="px-10" onClick={handleEndDrill}>
+                  <Button variant="gradient" size="lg" className="px-10" onClick={handleEndBatch}>
                     提交评估
                   </Button>
                 </CardContent>
@@ -230,9 +251,14 @@ export default function Interview() {
               <Card className="w-full max-w-[720px] animate-fade-in">
                 <CardContent className="p-5 md:p-8">
                   <div className="flex items-center justify-between mb-4">
-                    <Badge variant="outline" className="text-primary border-primary/30">
-                      Q{currentQ.id}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-primary border-primary/30">
+                        Q{currentQ.id}
+                      </Badge>
+                      {currentQ.category && (
+                        <Badge variant={isJobPrep ? "blue" : "secondary"}>{currentQ.category}</Badge>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       {currentQ.focus_area && (
                         <Badge variant="secondary">{currentQ.focus_area}</Badge>
@@ -251,6 +277,11 @@ export default function Interview() {
                       <ReactMarkdown>{currentQ.question}</ReactMarkdown>
                     </div>
                   </div>
+                  {isJobPrep && currentQ.intent && (
+                    <div className="mt-4 rounded-xl bg-blue-500/8 border border-blue-500/15 px-4 py-3 text-sm leading-relaxed text-dim">
+                      <span className="text-blue-300 font-medium">面试官在看什么：</span> {currentQ.intent}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

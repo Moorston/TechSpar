@@ -8,6 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const MODE_META = {
+  resume: { color: "var(--ai-glow)", label: "简历面试" },
+  topic_drill: { color: "var(--green)", label: "专项训练" },
+  jd_prep: { color: "#60a5fa", label: "JD 备面" },
+  recording: { color: "#22d3ee", label: "录音复盘" },
+};
+
 function CollapsibleList({ items, limit, renderItem }) {
   const [expanded, setExpanded] = useState(false);
   const show = expanded ? items : items.slice(0, limit);
@@ -73,8 +80,8 @@ function ScoreChart({ history }) {
       <path d={linePath} fill="none" stroke="var(--ai-glow)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       {points.map((p, i) => (
         <g key={i}>
-          <circle cx={p.x} cy={p.y} r={4} fill={p.mode === "resume" ? "var(--ai-glow)" : "var(--green)"} stroke="var(--card)" strokeWidth={2} />
-          <title>{`${p.date} ${p.mode === "resume" ? "简历面试" : p.topic}: ${p.score}/10`}</title>
+          <circle cx={p.x} cy={p.y} r={4} fill={(MODE_META[p.mode] || MODE_META.topic_drill).color} stroke="var(--card)" strokeWidth={2} />
+          <title>{`${p.date} ${(MODE_META[p.mode] || MODE_META.topic_drill).label}${p.topic ? ` · ${p.topic}` : ""}: ${p.score}/10`}</title>
         </g>
       ))}
       <defs>
@@ -162,7 +169,7 @@ export default function Profile() {
             </CardContent>
           </Card>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <Card className="border-l-[3px] border-l-primary">
             <CardContent className="p-3.5">
               <div className="text-[13px] font-semibold text-primary mb-2.5">简历面试</div>
@@ -188,6 +195,21 @@ export default function Profile() {
                 </div>
                 <div className="flex-1 text-center">
                   <div className="text-[22px] font-bold text-green">{stats.drill_avg_score ?? "-"}</div>
+                  <div className="text-[11px] text-dim mt-0.5">平均分</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="border-l-[3px] border-l-blue-400">
+            <CardContent className="p-3.5">
+              <div className="text-[13px] font-semibold text-blue-400 mb-2.5">JD 备面</div>
+              <div className="flex gap-3">
+                <div className="flex-1 text-center">
+                  <div className="text-[22px] font-bold text-blue-400">{stats.job_prep_sessions || 0}</div>
+                  <div className="text-[11px] text-dim mt-0.5">次数</div>
+                </div>
+                <div className="flex-1 text-center">
+                  <div className="text-[22px] font-bold text-blue-400">{stats.job_prep_avg_score ?? "-"}</div>
                   <div className="text-[11px] text-dim mt-0.5">平均分</div>
                 </div>
               </div>

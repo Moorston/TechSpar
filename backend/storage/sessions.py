@@ -18,6 +18,7 @@ def _get_conn() -> sqlite3.Connection:
             session_id TEXT PRIMARY KEY,
             mode TEXT NOT NULL,
             topic TEXT,
+            meta TEXT DEFAULT '{}',
             questions TEXT DEFAULT '[]',
             transcript TEXT DEFAULT '[]',
             scores TEXT DEFAULT '[]',
@@ -30,7 +31,7 @@ def _get_conn() -> sqlite3.Connection:
         )
     """)
     # Migrate: add columns if missing (existing DBs)
-    for col, default in [("questions", "'[]'"), ("overall", "'{}'"), ("user_id", "NULL")]:
+    for col, default in [("questions", "'[]'"), ("overall", "'{}'"), ("user_id", "NULL"), ("meta", "'{}'")]:
         try:
             conn.execute(f"SELECT {col} FROM sessions LIMIT 1")
         except sqlite3.OperationalError:
@@ -40,11 +41,18 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def create_session(session_id: str, mode: str, topic: str | None = None,
-                   questions: list | None = None, *, user_id: str):
+                   questions: list | None = None, meta: dict | None = None, *, user_id: str):
     conn = _get_conn()
     conn.execute(
-        "INSERT INTO sessions (session_id, mode, topic, questions, user_id) VALUES (?, ?, ?, ?, ?)",
-        (session_id, mode, topic, json.dumps(questions or [], ensure_ascii=False), user_id),
+        "INSERT INTO sessions (session_id, mode, topic, meta, questions, user_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            session_id,
+            mode,
+            topic,
+            json.dumps(meta or {}, ensure_ascii=False),
+            json.dumps(questions or [], ensure_ascii=False),
+            user_id,
+        ),
     )
     conn.commit()
     conn.close()
@@ -123,6 +131,7 @@ def get_session(session_id: str, *, user_id: str) -> dict | None:
         return None
     result = dict(row)
     result["transcript"] = json.loads(result["transcript"])
+    result["meta"] = json.loads(result.get("meta", "{}") or "{}")
     result["questions"] = json.loads(result.get("questions", "[]"))
     result["scores"] = json.loads(result["scores"])
     result["weak_points"] = json.loads(result["weak_points"])
@@ -174,7 +183,7 @@ def list_sessions(
     ).fetchone()[0]
 
     rows = conn.execute(
-        f"SELECT session_id, mode, topic, created_at, overall FROM sessions "
+        f"SELECT session_id, mode, topic, meta, created_at, overall FROM sessions "
         f"WHERE {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
         params + [limit, offset],
     ).fetchall()
@@ -183,10 +192,12 @@ def list_sessions(
     items = []
     for r in rows:
         overall = json.loads(r["overall"] or "{}")
+        meta = json.loads(r["meta"] or "{}")
         items.append({
             "session_id": r["session_id"],
             "mode": r["mode"],
             "topic": r["topic"],
+            "meta": meta,
             "created_at": r["created_at"],
             "avg_score": overall.get("avg_score"),
         })

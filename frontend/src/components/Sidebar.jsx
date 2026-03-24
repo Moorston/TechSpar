@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
-  Home, User, BookOpen, GitFork, Clock, Mic,
+  Home, User, BookOpen, GitFork, Clock, Mic, BriefcaseBusiness,
   Sun, Moon, LogOut, Menu, X, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { path: "/knowledge", label: "题库", icon: BookOpen },
   { path: "/graph", label: "图谱", icon: GitFork },
   { path: "/history", label: "历史记录", icon: Clock },
+  { path: "/job-prep", label: "JD 备面", icon: BriefcaseBusiness },
   { path: "/recording", label: "录音复盘", icon: Mic },
 ];
 
