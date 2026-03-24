@@ -2,21 +2,26 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { getHistory, deleteSession, getInterviewTopics } from "../api/interview";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const PAGE_SIZE = 15;
 
-function getScoreColor(score) {
-  if (score >= 8) return { bg: "rgba(0,184,148,0.15)", color: "var(--green)" };
-  if (score >= 6) return { bg: "rgba(245,158,11,0.15)", color: "var(--accent-light)" };
-  if (score >= 4) return { bg: "rgba(253,203,110,0.2)", color: "#e2b93b" };
-  return { bg: "rgba(225,112,85,0.15)", color: "var(--red)" };
-}
-
 const MODE_BADGES = {
-  resume: { text: "简历面试", cls: "bg-accent/15 text-accent-light" },
-  topic_drill: { text: "专项训练", cls: "bg-green/15 text-green" },
-  recording: { text: "录音复盘", cls: "bg-blue-500/15 text-blue-400" },
+  resume: { text: "简历面试", variant: "default" },
+  topic_drill: { text: "专项训练", variant: "success" },
+  recording: { text: "录音复盘", variant: "blue" },
 };
+
+const FILTER_OPTIONS = [
+  { key: "all", label: "全部" },
+  { key: "resume", label: "简历面试" },
+  { key: "topic_drill", label: "专项训练" },
+  { key: "recording", label: "录音复盘" },
+];
 
 export default function History() {
   const navigate = useNavigate();
@@ -45,7 +50,7 @@ export default function History() {
       .finally(() => setter(false));
   }, [modeFilter, topicFilter, sessions.length]);
 
-  useEffect(() => { fetchSessions(true); }, [modeFilter, topicFilter]); // eslint-disable-line
+  useEffect(() => { fetchSessions(true); }, [modeFilter, topicFilter]);
 
   const handleModeChange = (mode) => {
     if (mode === "resume") setTopicFilter("all");
@@ -64,41 +69,43 @@ export default function History() {
     }
   };
 
-  if (loading) return <div className="text-center py-15 text-dim">加载中...</div>;
+  if (loading) {
+    return (
+      <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full space-y-4">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-10 w-full" />
+        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+      </div>
+    );
+  }
 
   const hasFilters = modeFilter !== "all" || topicFilter !== "all";
 
   return (
     <div className="flex-1 px-4 py-8 md:px-6 md:py-10 max-w-3xl mx-auto w-full">
-      {/* Title row */}
-      <div className="flex items-baseline justify-between mb-5">
+      <div className="flex items-baseline justify-between mb-5 animate-fade-in">
         <div className="text-2xl md:text-[28px] font-display font-bold">历史记录</div>
         <div className="text-sm text-dim">共 {total} 条记录</div>
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
-        {[
-          { key: "all", label: "全部" },
-          { key: "resume", label: "简历面试" },
-          { key: "topic_drill", label: "专项训练" },
-          { key: "recording", label: "录音复盘" },
-        ].map((m) => (
-          <button
+      <div className="flex items-center gap-2 mb-5 flex-wrap animate-fade-in-up">
+        {FILTER_OPTIONS.map((m) => (
+          <Button
             key={m.key}
-            className={`px-3.5 py-1.5 rounded-lg text-[13px] font-medium border transition-all cursor-pointer
-              ${modeFilter === m.key ? "bg-hover text-text border-accent" : "bg-transparent text-dim border-border hover:bg-hover"}`}
+            variant={modeFilter === m.key ? "secondary" : "ghost"}
+            size="sm"
+            className={modeFilter === m.key ? "border-primary border text-text" : ""}
             onClick={() => handleModeChange(m.key)}
           >
             {m.label}
-          </button>
+          </Button>
         ))}
 
         {modeFilter !== "resume" && topics.length > 0 && (
           <>
             <div className="w-px h-5 bg-border mx-1" />
             <select
-              className="px-3.5 py-1.5 rounded-lg text-[13px] bg-input text-text border border-border outline-none cursor-pointer"
+              className="px-3.5 py-1.5 rounded-lg text-[13px] bg-input-bg text-text border border-border outline-none cursor-pointer"
               value={topicFilter}
               onChange={(e) => setTopicFilter(e.target.value)}
             >
@@ -109,63 +116,73 @@ export default function History() {
         )}
       </div>
 
-      {/* Session list */}
       {sessions.length === 0 ? (
-        <div className="text-center py-15 text-dim">
-          {hasFilters ? "没有匹配的记录，试试调整筛选条件" : "还没有面试记录，去首页开始一场面试吧"}
+        <div className="text-center py-15 text-dim animate-fade-in">
+          <p>{hasFilters ? "没有匹配的记录，试试调整筛选条件" : "还没有面试记录，去首页开始一场面试吧"}</p>
         </div>
       ) : (
         <>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-2.5 stagger-children">
             {sessions.map((s) => {
               const badge = MODE_BADGES[s.mode] || MODE_BADGES.resume;
-              const hasScore = s.avg_score != null;
-              const sc = hasScore ? getScoreColor(s.avg_score) : null;
 
               return (
-                <div
+                <Card
                   key={s.session_id}
-                  className="flex items-center justify-between px-4 py-3.5 md:px-5 bg-card border border-border rounded-box cursor-pointer transition-all hover:border-accent"
+                  className="cursor-pointer hover:border-primary/50 hover:-translate-y-px hover:shadow-sm transition-all"
                   onClick={() => navigate(`/review/${s.session_id}`)}
                 >
-                  <div className="flex items-center gap-2 md:gap-2.5 min-w-0 flex-1 flex-wrap">
-                    <span className={`px-2.5 py-1 rounded-md text-xs font-medium shrink-0 ${badge.cls}`}>{badge.text}</span>
-                    {s.topic && <span className="text-sm text-text font-medium truncate">{s.topic}</span>}
-                    <span className="text-xs text-dim shrink-0 hidden md:inline">#{s.session_id}</span>
-                  </div>
-                  <div className="flex items-center gap-2 md:gap-3 shrink-0">
-                    {hasScore ? (
-                      <span className="px-2.5 py-1 rounded-md text-[13px] font-semibold min-w-[52px] text-center" style={{ background: sc.bg, color: sc.color }}>
-                        {s.avg_score}/10
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-md text-[13px] text-dim bg-hover min-w-[52px] text-center">--</span>
-                    )}
-                    <span className="text-[13px] text-dim whitespace-nowrap hidden md:inline">{s.created_at?.slice(0, 10)}</span>
-                    <button
-                      className="px-2 py-1 rounded-md bg-transparent text-dim text-[15px] opacity-50 transition-all hover:text-red hover:opacity-100"
-                      title="删除"
-                      onClick={(e) => handleDelete(e, s.session_id)}
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                </div>
+                  <CardContent className="p-3.5 md:p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2 md:gap-2.5 min-w-0 flex-1 flex-wrap">
+                      <Badge variant={badge.variant}>{badge.text}</Badge>
+                      {s.topic && <span className="text-sm text-text font-medium truncate">{s.topic}</span>}
+                      <span className="text-xs text-dim shrink-0 hidden md:inline">#{s.session_id}</span>
+                    </div>
+                    <div className="flex items-center gap-2 md:gap-3 shrink-0">
+                      <ScorePill score={s.avg_score} />
+                      <span className="text-[13px] text-dim whitespace-nowrap hidden md:inline">{s.created_at?.slice(0, 10)}</span>
+                      <button
+                        className="p-1.5 rounded-md text-dim text-[15px] opacity-50 hover:text-red hover:opacity-100 transition-all cursor-pointer"
+                        title="删除"
+                        onClick={(e) => handleDelete(e, s.session_id)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </CardContent>
+                </Card>
               );
             })}
           </div>
 
           {sessions.length < total && (
-            <button
-              className="block w-full py-3 mt-4 rounded-box bg-hover text-dim text-sm border border-border cursor-pointer transition-all hover:bg-card"
+            <Button
+              variant="outline"
+              className="block w-full py-3 mt-4"
               onClick={() => fetchSessions(false)}
               disabled={loadingMore}
             >
               {loadingMore ? "加载中..." : `加载更多 (${sessions.length}/${total})`}
-            </button>
+            </Button>
           )}
         </>
       )}
     </div>
+  );
+}
+
+function ScorePill({ score }) {
+  if (score == null) {
+    return <Badge variant="secondary" className="min-w-[52px] justify-center text-[13px]">--</Badge>;
+  }
+  let bg, color;
+  if (score >= 8) { bg = "rgba(34,197,94,0.15)"; color = "var(--green)"; }
+  else if (score >= 6) { bg = "rgba(245,158,11,0.15)"; color = "var(--ai-glow)"; }
+  else if (score >= 4) { bg = "rgba(253,203,110,0.2)"; color = "#e2b93b"; }
+  else { bg = "rgba(239,68,68,0.15)"; color = "var(--red)"; }
+  return (
+    <Badge variant="outline" className="min-w-[52px] justify-center font-semibold text-[13px]" style={{ background: bg, borderColor: "transparent", color }}>
+      {score}/10
+    </Badge>
   );
 }

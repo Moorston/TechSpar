@@ -1,11 +1,15 @@
 import { getTopicIcon } from "../utils/topicIcons";
+import { cn } from "@/lib/utils";
 
 export default function TopicCard({ topicKey, name, icon, onClick, selected }) {
   return (
     <div
-      className={`flex items-center gap-3 px-5 py-4 rounded-box cursor-pointer transition-all text-left
-        border ${selected ? "border-accent bg-hover shadow-[0_0_16px_rgba(245,158,11,0.1)]" : "border-border bg-card"}
-        hover:border-accent hover:-translate-y-px hover:shadow-[0_0_16px_rgba(245,158,11,0.08)]`}
+      className={cn(
+        "flex items-center gap-3 px-5 py-4 rounded-xl cursor-pointer transition-all text-left border",
+        selected
+          ? "border-primary bg-primary/5 shadow-[0_0_16px_rgba(245,158,11,0.1)]"
+          : "border-border bg-card hover:border-primary/50 hover:-translate-y-0.5 hover:shadow-md"
+      )}
       onClick={onClick}
     >
       <div className="w-10 h-10 flex items-center justify-center rounded-lg bg-hover text-dim">

@@ -2,13 +2,23 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, FileText, Users, User, Loader2 } from "lucide-react";
 import { transcribeRecording, analyzeRecording } from "../api/interview";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+
+const RECORDING_MODES = [
+  { key: "dual", label: "双人对话", sub: "面试官+你", Icon: Users, color: "blue" },
+  { key: "solo", label: "单人录音", sub: "只有你", Icon: User, color: "violet" },
+];
 
 export default function RecordingAnalysis() {
   const navigate = useNavigate();
   const fileRef = useRef(null);
 
   const [recordingMode, setRecordingMode] = useState("dual");
-  const [inputTab, setInputTab] = useState("upload"); // "upload" | "paste"
+  const [inputTab, setInputTab] = useState("upload");
   const [transcript, setTranscript] = useState("");
   const [audioFile, setAudioFile] = useState(null);
   const [company, setCompany] = useState("");
@@ -45,15 +55,8 @@ export default function RecordingAnalysis() {
     setAnalyzing(true);
     setError(null);
     try {
-      const data = await analyzeRecording(
-        transcript, recordingMode, company || null, position || null
-      );
-      navigate(`/review/${data.session_id}`, {
-        state: {
-          ...data,
-          mode: "recording",
-        },
-      });
+      const data = await analyzeRecording(transcript, recordingMode, company || null, position || null);
+      navigate(`/review/${data.session_id}`, { state: { ...data, mode: "recording" } });
     } catch (err) {
       setError("分析失败: " + err.message);
       setAnalyzing(false);
@@ -65,138 +68,124 @@ export default function RecordingAnalysis() {
   return (
     <div className="flex-1 flex flex-col items-center px-4 pt-8 pb-10 md:px-6 md:pt-12">
       <div className="w-full max-w-[700px]">
-        {/* Header */}
-        <div className="mb-8">
+        <div className="mb-8 animate-fade-in">
           <h1 className="text-2xl md:text-[28px] font-display font-bold mb-2">录音复盘</h1>
           <p className="text-sm text-dim">上传面试录音或粘贴转写文字，AI 自动识别涉及领域并分析复盘</p>
         </div>
 
-        {/* Recording mode */}
-        <div className="mb-6">
+        <div className="mb-6 animate-fade-in-up">
           <div className="text-[15px] font-semibold mb-3">录音模式</div>
           <div className="flex gap-3">
-            <button
-              className={`flex items-center gap-2 px-5 py-3 rounded-xl border-2 transition-all text-sm font-medium
-                ${recordingMode === "dual"
-                  ? "border-blue-500 bg-blue-500/10 text-blue-400"
-                  : "border-border bg-card text-dim hover:border-blue-500/50"}`}
-              onClick={() => setRecordingMode("dual")}
-            >
-              <Users size={18} />
-              双人对话
-              <span className="text-xs opacity-60 ml-1">面试官+你</span>
-            </button>
-            <button
-              className={`flex items-center gap-2 px-5 py-3 rounded-xl border-2 transition-all text-sm font-medium
-                ${recordingMode === "solo"
-                  ? "border-violet-500 bg-violet-500/10 text-violet-400"
-                  : "border-border bg-card text-dim hover:border-violet-500/50"}`}
-              onClick={() => setRecordingMode("solo")}
-            >
-              <User size={18} />
-              单人录音
-              <span className="text-xs opacity-60 ml-1">只有你</span>
-            </button>
+            {RECORDING_MODES.map(({ key, label, sub, Icon, color }) => (
+              <Card
+                key={key}
+                className={cn(
+                  "flex-1 cursor-pointer transition-all hover:-translate-y-px",
+                  recordingMode === key && "border-2 shadow-md",
+                  recordingMode === key && color === "blue" && "border-blue-500",
+                  recordingMode === key && color === "violet" && "border-violet-500"
+                )}
+                onClick={() => setRecordingMode(key)}
+              >
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className={cn(
+                    "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
+                    recordingMode === key
+                      ? color === "blue" ? "bg-blue-500/15 text-blue-400" : "bg-violet-500/15 text-violet-400"
+                      : "bg-hover text-dim"
+                  )}>
+                    <Icon size={20} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-medium">{label}</div>
+                    <div className="text-xs text-dim">{sub}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
 
-        {/* Optional: company & position */}
-        <div className="flex gap-3 mb-6">
-          <div className="flex-1">
-            <label className="text-xs text-dim mb-1 block">公司（可选）</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 rounded-lg bg-card border border-border text-sm text-text placeholder:text-dim/50 focus:outline-none focus:border-accent/50"
-              placeholder="例：字节跳动"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-            />
+        <div className="flex gap-3 mb-6 animate-fade-in-up [animation-delay:0.05s]">
+          <div className="flex-1 space-y-1">
+            <Label className="text-xs">公司（可选）</Label>
+            <Input placeholder="例：字节跳动" value={company} onChange={(e) => setCompany(e.target.value)} />
           </div>
-          <div className="flex-1">
-            <label className="text-xs text-dim mb-1 block">岗位（可选）</label>
-            <input
-              type="text"
-              className="w-full px-3 py-2 rounded-lg bg-card border border-border text-sm text-text placeholder:text-dim/50 focus:outline-none focus:border-accent/50"
-              placeholder="例：后端开发实习"
-              value={position}
-              onChange={(e) => setPosition(e.target.value)}
-            />
+          <div className="flex-1 space-y-1">
+            <Label className="text-xs">岗位（可选）</Label>
+            <Input placeholder="例：后端开发实习" value={position} onChange={(e) => setPosition(e.target.value)} />
           </div>
         </div>
 
-        {/* Input tabs */}
-        <div className="mb-4">
+        <div className="mb-4 animate-fade-in-up [animation-delay:0.1s]">
           <div className="flex gap-1 bg-hover rounded-lg p-1 w-fit mb-4">
-            <button
-              className={`px-4 py-1.5 rounded-md text-sm transition-all ${inputTab === "upload" ? "bg-card text-text shadow-sm" : "text-dim"}`}
-              onClick={() => setInputTab("upload")}
-            >
-              上传录音
-            </button>
-            <button
-              className={`px-4 py-1.5 rounded-md text-sm transition-all ${inputTab === "paste" ? "bg-card text-text shadow-sm" : "text-dim"}`}
-              onClick={() => setInputTab("paste")}
-            >
-              粘贴文字
-            </button>
+            {["upload", "paste"].map((t) => (
+              <button
+                key={t}
+                className={cn(
+                  "px-4 py-1.5 rounded-md text-sm transition-all cursor-pointer",
+                  inputTab === t ? "bg-card text-text shadow-sm font-medium" : "text-dim hover:text-text"
+                )}
+                onClick={() => setInputTab(t)}
+              >
+                {t === "upload" ? "上传录音" : "粘贴文字"}
+              </button>
+            ))}
           </div>
 
           {inputTab === "upload" && (
             <div className="space-y-3">
-              <div
-                className={`flex flex-col items-center gap-2 px-5 py-8 bg-card border-2 border-dashed rounded-xl cursor-pointer transition-colors text-sm
-                  ${audioFile ? "border-accent/40 text-text" : "border-border text-dim hover:border-accent/30"}`}
+              <Card
+                className={cn(
+                  "cursor-pointer transition-all hover:-translate-y-px",
+                  audioFile ? "border-primary/40" : "border-dashed"
+                )}
                 onClick={() => fileRef.current?.click()}
               >
-                {audioFile ? (
-                  <>
-                    <FileText size={28} className="text-accent-light" />
-                    <span className="font-medium">{audioFile.name}</span>
-                    <span className="text-xs text-dim">
-                      {(audioFile.size / 1024 / 1024).toFixed(1)} MB — 点击更换
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Upload size={28} />
-                    <span>点击上传音频文件</span>
-                    <span className="text-xs text-dim">支持 mp3, wav, m4a, webm 等格式</span>
-                  </>
-                )}
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="audio/*"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </div>
+                <CardContent className="p-8 flex flex-col items-center gap-3">
+                  {audioFile ? (
+                    <>
+                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <FileText size={24} className="text-primary" />
+                      </div>
+                      <div className="text-center">
+                        <div className="font-medium text-text">{audioFile.name}</div>
+                        <div className="text-xs text-dim mt-0.5">{(audioFile.size / 1024 / 1024).toFixed(1)} MB — 点击更换</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-12 h-12 rounded-xl bg-hover flex items-center justify-center">
+                        <Upload size={24} className="text-dim" />
+                      </div>
+                      <div className="text-center">
+                        <div className="font-medium text-text">点击上传音频文件</div>
+                        <div className="text-xs text-dim mt-0.5">支持 mp3, wav, m4a, webm 等格式</div>
+                      </div>
+                    </>
+                  )}
+                  <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={handleFileChange} />
+                </CardContent>
+              </Card>
 
               {audioFile && !transcript && (
-                <button
-                  className={`w-full py-3 rounded-xl text-sm font-semibold transition-all
-                    ${transcribing
-                      ? "bg-blue-500/20 text-blue-400 cursor-wait"
-                      : "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"}`}
+                <Button
+                  variant="outline"
+                  className="w-full border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
                   onClick={handleTranscribe}
                   disabled={transcribing}
                 >
                   {transcribing ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 size={16} className="animate-spin" />
-                      转写中，请稍候...
-                    </span>
-                  ) : (
-                    "开始转写"
-                  )}
-                </button>
+                    <><Loader2 size={16} className="animate-spin" /> 转写中，请稍候...</>
+                  ) : "开始转写"}
+                </Button>
               )}
             </div>
           )}
 
           {inputTab === "paste" && !transcript && (
             <textarea
-              className="w-full h-48 px-4 py-3 rounded-xl bg-card border border-border text-sm text-text leading-relaxed resize-y placeholder:text-dim/50 focus:outline-none focus:border-accent/50"
+              className="w-full h-48 px-4 py-3 rounded-xl bg-card border border-border text-sm text-text leading-relaxed resize-y focus:outline-none focus:border-primary"
               placeholder={
                 recordingMode === "dual"
                   ? "粘贴面试对话记录...\n\n格式示例：\n面试官：请介绍一下你自己\n我：我是XXX，目前..."
@@ -208,56 +197,43 @@ export default function RecordingAnalysis() {
           )}
         </div>
 
-        {/* Transcript display & edit */}
         {transcript && (
-          <div className="mb-6">
+          <div className="mb-6 animate-fade-in">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[15px] font-semibold">转写结果</span>
               <span className="text-xs text-dim">可直接编辑修正</span>
             </div>
             <textarea
-              className="w-full h-64 px-4 py-3 rounded-xl bg-card border border-border text-sm text-text leading-relaxed resize-y focus:outline-none focus:border-accent/50"
+              className="w-full h-64 px-4 py-3 rounded-xl bg-card border border-border text-sm text-text leading-relaxed resize-y focus:outline-none focus:border-primary"
               value={transcript}
               onChange={(e) => setTranscript(e.target.value)}
             />
           </div>
         )}
 
-        {/* Error */}
         {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-red/10 border border-red/20 text-sm text-red">
+          <div className="mb-4 px-4 py-3 rounded-xl bg-red/10 border border-red/20 text-sm text-red animate-shake">
             {error}
           </div>
         )}
 
-        {/* Analyze button */}
         {transcript && (
-          <button
-            className={`w-full py-3.5 rounded-xl text-base font-semibold transition-all
-              ${canAnalyze
-                ? "bg-gradient-to-r from-accent to-orange text-white hover:shadow-[0_0_24px_rgba(245,158,11,0.2)]"
-                : "bg-hover text-dim cursor-not-allowed"}`}
+          <Button
+            variant="gradient"
+            size="lg"
+            className="w-full animate-fade-in-up"
             disabled={!canAnalyze}
             onClick={handleAnalyze}
           >
             {analyzing ? (
-              <span className="flex items-center justify-center gap-2">
-                <Loader2 size={18} className="animate-spin" />
-                AI 分析中...
-              </span>
-            ) : (
-              "开始分析"
-            )}
-          </button>
+              <><Loader2 size={18} className="animate-spin" /> AI 分析中...</>
+            ) : "开始分析"}
+          </Button>
         )}
 
-        {/* Back */}
-        <button
-          className="mt-6 px-5 py-2.5 rounded-xl bg-transparent text-dim text-sm border border-border cursor-pointer hover:text-text"
-          onClick={() => navigate("/")}
-        >
-          返回首页
-        </button>
+        <div className="mt-6">
+          <Button variant="ghost" onClick={() => navigate("/")}>返回首页</Button>
+        </div>
       </div>
     </div>
   );
