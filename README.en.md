@@ -114,7 +114,7 @@ Answer questions → Batch evaluation (per-question scoring + weakness extractio
 
 **Persistent Memory** — A long-term memory system based on Mem0 architecture. Not a simple append — it uses LLM-driven intelligent updates: ADD (new), UPDATE (revise), and IMPROVE (mark progress) operations on weaknesses, with cosine similarity deduplication to keep profiles refined and compact.
 
-**Adaptive Question Engine** — A personalized question engine fusing three layers of information. Each question considers global profile, domain mastery, knowledge base retrieval, FAQ bank, and historical deduplication — not simple random selection.
+**Directed Question Generation** — Supports generating questions by domain, resume, or job description. The system combines user profile, domain mastery, knowledge retrieval, FAQ bank, and historical deduplication to generate questions dynamically instead of drawing from a fixed question set.
 
 **Algorithmic Mastery Scoring** — A deterministic mastery scoring algorithm. `contribution = (difficulty/5) × (score/10)`, merged with historical scores weighted by answer coverage, ensuring assessment consistency without relying on subjective LLM judgment.
 
