@@ -130,6 +130,12 @@ export async function getReview(sessionId) {
   return res.json();
 }
 
+export async function getTaskStatus(taskId) {
+  const res = await authFetch(`${API_BASE}/tasks/${taskId}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getReferenceAnswer(topic, question) {
   const res = await authFetch(`${API_BASE}/interview/reference-answer`, {
     method: "POST",

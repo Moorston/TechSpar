@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { getTopicIcon } from "../utils/topicIcons";
 import { getProfile, getTopicHistory, getTopicRetrospective, getTopics } from "../api/interview";
+import { useTaskStatus } from "../contexts/TaskStatusContext";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ const MODE_BADGES = {
 export default function TopicDetail() {
   const { topic } = useParams();
   const navigate = useNavigate();
+  const { startTask } = useTaskStatus();
 
   const [profile, setProfile] = useState(null);
   const [topicInfo, setTopicInfo] = useState(null);
@@ -62,19 +64,7 @@ export default function TopicDetail() {
     setGenerating(true);
     try {
       const res = await getTopicRetrospective(topic);
-      setRetrospective(res.retrospective);
-      setProfile((current) => {
-        if (!current) return current;
-        const topicMastery = {
-          ...(current.topic_mastery || {}),
-          [topic]: {
-            ...(current.topic_mastery?.[topic] || {}),
-            retrospective: res.retrospective,
-            retrospective_at: res.retrospective_at,
-          },
-        };
-        return { ...current, topic_mastery: topicMastery };
-      });
+      startTask(res.task_id, "retrospective", `${topicInfo?.name || topic} 领域回顾生成中`);
     } catch (err) {
       alert("生成失败: " + err.message);
     } finally {

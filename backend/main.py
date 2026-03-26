@@ -1,4 +1,6 @@
 """FastAPI 入口 — 面试模拟系统 API."""
+import asyncio
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -54,6 +56,8 @@ _graphs: dict[str, dict] = {}
 _drill_sessions: dict[str, dict] = {}
 # JD prep session data (questions + preview stored for evaluation at end)
 _job_prep_sessions: dict[str, dict] = {}
+# Review generation status: "pending" | "done" | "error"
+_task_status: dict[str, dict] = {}  # {task_id: {"status", "type", "result"}}
 
 
 @app.on_event("startup")
@@ -194,159 +198,94 @@ async def recording_transcribe(
         raise HTTPException(500, f"Transcription failed: {e}")
 
 
-@router.post("/recording/analyze")
-async def recording_analyze(req: RecordingAnalyzeRequest, user_id: str = Depends(get_current_user)):
-    """Analyze a recording transcript — dual mode extracts Q&A, solo mode does holistic eval."""
-    session_id = str(uuid.uuid4())
-
-    if req.recording_mode == "dual":
-        return await _analyze_dual(req, session_id, user_id)
-    else:
-        return await _analyze_solo(req, session_id, user_id)
-
-
-async def _analyze_dual(req: RecordingAnalyzeRequest, session_id: str, user_id: str):
-    """Dual mode: structure transcript into Q&A → evaluate → update profile."""
-    from backend.graphs.topic_drill import _parse_json_response
-    from backend.llm_provider import get_langchain_llm
-    from backend.prompts.recording import RECORDING_STRUCTURE_PROMPT, RECORDING_DUAL_EVAL_PROMPT
-    from langchain_core.messages import SystemMessage
-
-    llm = get_langchain_llm()
-
-    # Step 1: LLM structures transcript into Q&A pairs
-    structure_prompt = RECORDING_STRUCTURE_PROMPT.format(
-        transcript=req.transcript[:8000],
-    )
-    response = llm.invoke([
-        SystemMessage(content="你是面试记录分析引擎。只返回 JSON，不要其他内容。"),
-        HumanMessage(content=structure_prompt),
-    ])
-
+def _analyze_recording_background(session_id: str, req_transcript: str, req_recording_mode: str,
+                                   req_company: str | None, req_position: str | None, user_id: str):
+    """Background task: analyze recording transcript."""
     try:
-        structured = _parse_json_response(response.content)
-    except Exception:
-        raise HTTPException(500, "录音结构化失败，LLM 返回格式异常。请重试。")
-
-    qa_pairs = structured.get("qa_pairs", [])
-    if not qa_pairs:
-        raise HTTPException(400, "未能从录音中提取出有效的问答对。请检查转写文本。")
-
-    # Convert to drill-compatible format
-    questions = []
-    answers = []
-    for pair in qa_pairs:
-        qid = pair.get("id", len(questions) + 1)
-        questions.append({
-            "id": qid,
-            "question": pair["question"],
-            "difficulty": 3,
-            "focus_area": pair.get("focus_area", ""),
-        })
-        answers.append({
-            "question_id": qid,
-            "answer": pair.get("answer", ""),
-        })
-
-    # Create session
-    create_session(session_id, mode="recording", questions=questions, user_id=user_id)
-
-    # Step 2: Evaluate Q&A pairs (recording-specific prompt, no topic binding)
-    qa_lines = []
-    for q, a in zip(questions, answers):
-        qa_lines.append(
-            f"### Q{q['id']} ({q.get('focus_area', '')})\n"
-            f"**题目**: {q['question']}\n**回答**: {a['answer']}"
+        from backend.graphs.topic_drill import _parse_json_response
+        from backend.llm_provider import get_langchain_llm
+        from backend.prompts.recording import (
+            RECORDING_STRUCTURE_PROMPT, RECORDING_DUAL_EVAL_PROMPT, RECORDING_SOLO_EVAL_PROMPT,
         )
+        from langchain_core.messages import SystemMessage
 
-    eval_prompt = RECORDING_DUAL_EVAL_PROMPT.format(
-        qa_pairs="\n\n".join(qa_lines),
-    )
-    eval_response = llm.invoke([
-        SystemMessage(content="你是面试评估引擎。只返回 JSON，不要其他内容。"),
-        HumanMessage(content=eval_prompt),
-    ])
+        llm = get_langchain_llm()
 
-    try:
-        eval_result = _parse_json_response(eval_response.content)
-    except Exception:
-        raise HTTPException(500, "评估失败，LLM 返回格式异常。请重试。")
+        if req_recording_mode == "dual":
+            # Structure transcript into Q&A
+            structure_prompt = RECORDING_STRUCTURE_PROMPT.format(transcript=req_transcript[:8000])
+            response = llm.invoke([
+                SystemMessage(content="你是面试记录分析引擎。只返回 JSON，不要其他内容。"),
+                HumanMessage(content=structure_prompt),
+            ])
+            structured = _parse_json_response(response.content)
+            qa_pairs = structured.get("qa_pairs", [])
 
-    scores = eval_result.get("scores", [])
-    overall = eval_result.get("overall", {})
+            questions, answers = [], []
+            for pair in qa_pairs:
+                qid = pair.get("id", len(questions) + 1)
+                questions.append({"id": qid, "question": pair["question"], "difficulty": 3,
+                                  "focus_area": pair.get("focus_area", "")})
+                answers.append({"question_id": qid, "answer": pair.get("answer", "")})
 
-    for s in scores:
-        s.setdefault("difficulty", 3)
+            # Evaluate
+            qa_lines = [f"### Q{q['id']} ({q.get('focus_area', '')})\n**题目**: {q['question']}\n**回答**: {a['answer']}"
+                        for q, a in zip(questions, answers)]
+            eval_prompt = RECORDING_DUAL_EVAL_PROMPT.format(qa_pairs="\n\n".join(qa_lines))
+            eval_response = llm.invoke([
+                SystemMessage(content="你是面试评估引擎。只返回 JSON，不要其他内容。"),
+                HumanMessage(content=eval_prompt),
+            ])
+            eval_result = _parse_json_response(eval_response.content)
+            scores = eval_result.get("scores", [])
+            overall = eval_result.get("overall", {})
+            for s in scores:
+                s.setdefault("difficulty", 3)
 
-    # Step 3: Format review + save
-    review = _format_drill_review(questions, answers, scores, overall)
-    save_drill_answers(session_id, answers, user_id=user_id)
-    save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
+            review = _format_drill_review(questions, answers, scores, overall)
+            save_drill_answers(session_id, answers, user_id=user_id)
+            save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
+        else:
+            # Solo mode
+            eval_prompt = RECORDING_SOLO_EVAL_PROMPT.format(transcript=req_transcript[:8000])
+            response = llm.invoke([
+                SystemMessage(content="你是录音评估引擎。只返回 JSON，不要其他内容。"),
+                HumanMessage(content=eval_prompt),
+            ])
+            eval_result = _parse_json_response(response.content)
+            topics_covered = eval_result.get("topics_covered", [])
+            overall = eval_result.get("overall", {})
+            scores = [{"question_id": t.get("id", i + 1), "score": t.get("score"), "difficulty": 3}
+                      for i, t in enumerate(topics_covered)]
 
-    # Step 4: Update profile (topic=None, weak/strong points carry their own topic)
-    await _update_recording_profile(overall, scores, len(questions), user_id)
+            review = _format_solo_review(topics_covered, overall)
+            save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
 
-    return {
-        "session_id": session_id,
-        "mode": "recording",
-        "recording_mode": "dual",
-        "review": review,
-        "scores": scores,
-        "overall": overall,
-        "questions": questions,
-        "answers": answers,
-    }
+        asyncio.run(_update_recording_profile(overall, scores, max(len(scores), 1), user_id))
+
+        _task_status[session_id] = {"status": "done", "type": "recording"}
+        logger.info(f"Recording analysis done for session {session_id}")
+    except Exception as e:
+        _task_status[session_id] = {"status": "error", "type": "recording"}
+        logger.error(f"Recording analysis failed for session {session_id}: {e}")
 
 
-async def _analyze_solo(req: RecordingAnalyzeRequest, session_id: str, user_id: str):
-    """Solo mode: holistic evaluation of candidate's technical expression."""
-    from backend.graphs.topic_drill import _parse_json_response
-    from backend.llm_provider import get_langchain_llm
-    from backend.prompts.recording import RECORDING_SOLO_EVAL_PROMPT
-    from langchain_core.messages import SystemMessage
-
+@router.post("/recording/analyze")
+async def recording_analyze(req: RecordingAnalyzeRequest, background_tasks: BackgroundTasks,
+                            user_id: str = Depends(get_current_user)):
+    """Analyze a recording transcript — async background processing."""
+    session_id = str(uuid.uuid4())
     create_session(session_id, mode="recording", user_id=user_id)
 
-    llm = get_langchain_llm()
-    eval_prompt = RECORDING_SOLO_EVAL_PROMPT.format(
-        transcript=req.transcript[:8000],
+    _task_status[session_id] = {"status": "pending", "type": "recording"}
+    background_tasks.add_task(
+        _analyze_recording_background, session_id, req.transcript, req.recording_mode,
+        req.company, req.position, user_id,
     )
-    response = llm.invoke([
-        SystemMessage(content="你是录音评估引擎。只返回 JSON，不要其他内容。"),
-        HumanMessage(content=eval_prompt),
-    ])
 
-    try:
-        eval_result = _parse_json_response(response.content)
-    except Exception:
-        raise HTTPException(500, "评估失败，LLM 返回格式异常。请重试。")
+    return {"session_id": session_id, "status": "pending"}
 
-    topics_covered = eval_result.get("topics_covered", [])
-    overall = eval_result.get("overall", {})
 
-    # Format review
-    review = _format_solo_review(topics_covered, overall)
-
-    # Build scores-like structure for profile update
-    scores = [
-        {"question_id": t.get("id", i + 1), "score": t.get("score"), "difficulty": 3}
-        for i, t in enumerate(topics_covered)
-    ]
-
-    # Save to DB
-    save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
-
-    # Update profile (topic=None, points carry their own topic labels)
-    await _update_recording_profile(overall, scores, max(len(topics_covered), 1), user_id)
-
-    return {
-        "session_id": session_id,
-        "mode": "recording",
-        "recording_mode": "solo",
-        "review": review,
-        "topics_covered": topics_covered,
-        "overall": overall,
-    }
 
 
 async def _update_recording_profile(overall: dict, scores: list, total_items: int, user_id: str):
@@ -486,80 +425,91 @@ def get_topic_history(topic: str, user_id: str = Depends(get_current_user)):
     return sessions
 
 
-@router.post("/profile/topic/{topic}/retrospective")
-async def generate_retrospective(topic: str, user_id: str = Depends(get_current_user)):
-    """Generate a comprehensive retrospective for a topic based on all past sessions."""
-    from backend.prompts.interviewer import TOPIC_RETROSPECTIVE_PROMPT
-    from backend.memory import _load_profile, _save_profile
-    from backend.llm_provider import get_langchain_llm
-    from langchain_core.messages import SystemMessage, HumanMessage
+def _generate_retrospective_background(task_id: str, topic: str, user_id: str):
+    """Background task: generate topic retrospective."""
+    try:
+        from backend.prompts.interviewer import TOPIC_RETROSPECTIVE_PROMPT
+        from backend.memory import _load_profile, _save_profile
+        from backend.llm_provider import get_langchain_llm
+        from langchain_core.messages import SystemMessage
 
-    # Gather all sessions for this topic
+        sessions = list_sessions_by_topic(topic, user_id=user_id)
+        profile = _load_profile(user_id)
+        topic_display = {k: v["name"] for k, v in load_topics(user_id).items()}
+        topic_name = topic_display.get(topic, topic)
+        mastery = profile.get("topic_mastery", {}).get(topic, {})
+
+        history_lines = []
+        for s in sessions:
+            date = s["created_at"][:10]
+            scores = s.get("scores", [])
+            valid_scores = [sc for sc in scores if isinstance(sc.get("score"), (int, float))]
+            avg = round(sum(sc["score"] for sc in valid_scores) / len(valid_scores), 1) if valid_scores else None
+            review = s.get("review") or ""
+            summary_part = review.split("## 逐题复盘")[0].strip()
+            score_lines = []
+            for sc in valid_scores:
+                line = f"- Q{sc.get('question_id', '?')}: {sc['score']}/10"
+                if sc.get("assessment"):
+                    line += f" — {sc['assessment']}"
+                score_lines.append(line)
+            history_lines.append(
+                f"### {date} (答题 {len(valid_scores)}/10, 平均 {avg or '无'}/10)\n"
+                f"{summary_part}\n"
+                + ("\n".join(score_lines) + "\n" if score_lines else "")
+            )
+
+        mastery_score = mastery.get("score", mastery.get("level", 0) * 20)
+        mastery_text = f"{mastery_score}/100 — {mastery.get('notes', '')}" if mastery_score > 0 else "暂无评估"
+
+        prompt = TOPIC_RETROSPECTIVE_PROMPT.format(
+            topic_name=topic_name,
+            session_history="\n".join(history_lines),
+            mastery_info=mastery_text,
+        )
+
+        llm = get_langchain_llm()
+        response = llm.invoke([
+            SystemMessage(content="你是面试教练。用 markdown 生成回顾报告。"),
+            HumanMessage(content=prompt),
+        ])
+
+        retrospective = response.content.strip()
+        generated_at = datetime.now().isoformat()
+        profile.setdefault("topic_mastery", {}).setdefault(topic, {})["retrospective"] = retrospective
+        profile["topic_mastery"][topic]["retrospective_at"] = generated_at
+        _save_profile(profile, user_id)
+
+        _task_status[task_id] = {
+            "status": "done", "type": "retrospective",
+            "result": {
+                "topic": topic, "topic_name": topic_name,
+                "retrospective": retrospective, "retrospective_at": generated_at,
+                "session_count": len(sessions),
+            },
+        }
+        logger.info(f"Retrospective generated for topic {topic}")
+    except Exception as e:
+        _task_status[task_id] = {"status": "error", "type": "retrospective"}
+        logger.error(f"Retrospective failed for topic {topic}: {e}")
+
+
+@router.post("/profile/topic/{topic}/retrospective")
+async def generate_retrospective(topic: str, background_tasks: BackgroundTasks,
+                                 user_id: str = Depends(get_current_user)):
+    """Generate a comprehensive retrospective — async background processing."""
     sessions = list_sessions_by_topic(topic, user_id=user_id)
     if not sessions:
         raise HTTPException(400, "该领域暂无训练记录")
 
-    profile = _load_profile(user_id)
-    topic_display = {k: v["name"] for k, v in load_topics(user_id).items()}
-    topic_name = topic_display.get(topic, topic)
-    mastery = profile.get("topic_mastery", {}).get(topic, {})
+    task_id = f"retro_{topic}_{user_id[:8]}"
+    existing = _task_status.get(task_id)
+    if existing and existing.get("status") == "pending":
+        return {"task_id": task_id, "status": "pending"}
+    _task_status[task_id] = {"status": "pending", "type": "retrospective"}
+    background_tasks.add_task(_generate_retrospective_background, task_id, topic, user_id)
 
-    # Format session history — only include answered questions
-    history_lines = []
-    for s in sessions:
-        date = s["created_at"][:10]
-        scores = s.get("scores", [])
-        valid_scores = [sc for sc in scores if isinstance(sc.get("score"), (int, float))]
-        avg = round(sum(sc["score"] for sc in valid_scores) / len(valid_scores), 1) if valid_scores else None
-
-        # Summary section only (before per-question breakdown)
-        review = s.get("review") or ""
-        summary_part = review.split("## 逐题复盘")[0].strip()
-
-        # Per-question scores — answered only
-        score_lines = []
-        for sc in valid_scores:
-            line = f"- Q{sc.get('question_id', '?')}: {sc['score']}/10"
-            if sc.get("assessment"):
-                line += f" — {sc['assessment']}"
-            score_lines.append(line)
-
-        history_lines.append(
-            f"### {date} (答题 {len(valid_scores)}/10, 平均 {avg or '无'}/10)\n"
-            f"{summary_part}\n"
-            + ("\n".join(score_lines) + "\n" if score_lines else "")
-        )
-
-    mastery_score = mastery.get("score", mastery.get("level", 0) * 20)
-    mastery_text = f"{mastery_score}/100 — {mastery.get('notes', '')}" if mastery_score > 0 else "暂无评估"
-
-    prompt = TOPIC_RETROSPECTIVE_PROMPT.format(
-        topic_name=topic_name,
-        session_history="\n".join(history_lines),
-        mastery_info=mastery_text,
-    )
-
-    llm = get_langchain_llm()
-    response = llm.invoke([
-        SystemMessage(content="你是面试教练。用 markdown 生成回顾报告。"),
-        HumanMessage(content=prompt),
-    ])
-
-    retrospective = response.content.strip()
-
-    # Cache in profile
-    generated_at = datetime.now().isoformat()
-    profile.setdefault("topic_mastery", {}).setdefault(topic, {})["retrospective"] = retrospective
-    profile["topic_mastery"][topic]["retrospective_at"] = generated_at
-    _save_profile(profile, user_id)
-
-    return {
-        "topic": topic,
-        "topic_name": topic_name,
-        "retrospective": retrospective,
-        "retrospective_at": generated_at,
-        "session_count": len(sessions),
-    }
+    return {"task_id": task_id, "status": "pending"}
 
 
 # ── Interview ──
@@ -751,41 +701,60 @@ async def chat(req: ChatRequest, user_id: str = Depends(get_current_user)):
     }
 
 
-@router.post("/interview/end/{session_id}")
-async def end_interview(session_id: str, body: EndDrillRequest = None,
-                        user_id: str = Depends(get_current_user)):
-    """End interview → evaluate → generate review → update profile."""
+logger = logging.getLogger("uvicorn")
 
-    # ── Drill mode: batch evaluate ──
-    if session_id in _drill_sessions:
-        entry = _drill_sessions[session_id]
-        if entry.get("user_id") != user_id:
-            raise HTTPException(403, "Access denied.")
 
-        topic = entry["topic"]
-        questions = entry["questions"]
-        answers = body.answers if body and body.answers else []
+def _generate_review_background(
+    session_id: str, mode, topic, messages, scores, weak_points,
+    eval_history, topic_name, user_id: str,
+):
+    """Background task: generate review + update profile."""
+    try:
+        review = generate_review(
+            mode=mode,
+            messages=messages,
+            scores=scores,
+            weak_points=weak_points,
+            topic=topic_name,
+            eval_history=eval_history,
+        )
 
-        # Save answers to SQLite
-        save_drill_answers(session_id, answers, user_id=user_id)
+        extraction = asyncio.run(update_profile_after_interview(
+            mode=mode.value,
+            topic=topic,
+            messages=messages,
+            user_id=user_id,
+            scores=scores,
+        ))
 
-        # Batch evaluate (1 LLM call)
+        resume_overall = {}
+        if extraction.get("dimension_scores"):
+            resume_overall["dimension_scores"] = extraction["dimension_scores"]
+        if extraction.get("avg_score"):
+            resume_overall["avg_score"] = extraction["avg_score"]
+        save_review(session_id, review, scores, weak_points, overall=resume_overall, user_id=user_id)
+
+        _task_status[session_id] = {"status": "done", "type": "resume_review"}
+        logger.info(f"Review generated for session {session_id}")
+    except Exception as e:
+        _task_status[session_id] = {"status": "error", "type": "resume_review"}
+        logger.error(f"Review generation failed for session {session_id}: {e}")
+
+
+def _end_drill_background(session_id, topic, questions, answers, user_id):
+    """Background task: evaluate drill answers + update profile."""
+    try:
         eval_result = evaluate_drill_answers(topic, questions, answers, user_id)
         scores = eval_result.get("scores", [])
         overall = eval_result.get("overall", {})
 
-        # Attach difficulty from questions to scores (for mastery calculation)
         q_diff = {q["id"]: q.get("difficulty", 3) for q in questions}
         for s in scores:
             s.setdefault("difficulty", q_diff.get(s.get("question_id"), 3))
 
-        # Generate review text from eval
         review = _format_drill_review(questions, answers, scores, overall)
-
-        # Save to SQLite
         save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
 
-        # Update spaced repetition state for evaluated weak points
         from backend.spaced_repetition import update_weak_point_sr
         for s in scores:
             wp = s.get("weak_point")
@@ -793,32 +762,18 @@ async def end_interview(session_id: str, body: EndDrillRequest = None,
             if wp and isinstance(sc, (int, float)):
                 update_weak_point_sr(topic, wp, sc, user_id)
 
-        # Update profile (1 LLM call via Mem0 pipeline — uses overall data)
-        await _update_drill_profile(topic, overall, scores, len(questions), user_id)
+        asyncio.run(_update_drill_profile(topic, overall, scores, len(questions), user_id))
 
-        del _drill_sessions[session_id]
+        _task_status[session_id] = {"status": "done", "type": "drill_review"}
+        logger.info(f"Drill review generated for session {session_id}")
+    except Exception as e:
+        _task_status[session_id] = {"status": "error", "type": "drill_review"}
+        logger.error(f"Drill review failed for session {session_id}: {e}")
 
-        return {
-            "session_id": session_id,
-            "mode": "topic_drill",
-            "review": review,
-            "scores": scores,
-            "overall": overall,
-        }
 
-    # ── JD prep mode: batch evaluate against job requirements ──
-    if session_id in _job_prep_sessions:
-        entry = _job_prep_sessions[session_id]
-        if entry.get("user_id") != user_id:
-            raise HTTPException(403, "Access denied.")
-
-        questions = entry["questions"]
-        preview = entry["preview"]
-        meta = entry["meta"]
-        answers = body.answers if body and body.answers else []
-
-        save_drill_answers(session_id, answers, user_id=user_id)
-
+def _end_jd_prep_background(session_id, questions, answers, preview, meta, user_id):
+    """Background task: evaluate JD prep answers + update profile."""
+    try:
         eval_result = evaluate_job_prep_answers(questions, answers, preview, user_id)
         scores = eval_result.get("scores", [])
         overall = eval_result.get("overall", {})
@@ -830,22 +785,59 @@ async def end_interview(session_id: str, body: EndDrillRequest = None,
         review = _format_job_prep_review(questions, answers, scores, overall, meta)
         save_review(session_id, review, scores, overall.get("new_weak_points", []), overall, user_id=user_id)
 
-        await _update_job_prep_profile(overall, scores, len(questions), meta, user_id)
+        asyncio.run(_update_job_prep_profile(overall, scores, len(questions), meta, user_id))
 
+        _task_status[session_id] = {"status": "done", "type": "jd_review"}
+        logger.info(f"JD prep review generated for session {session_id}")
+    except Exception as e:
+        _task_status[session_id] = {"status": "error", "type": "jd_review"}
+        logger.error(f"JD prep review failed for session {session_id}: {e}")
+
+
+@router.post("/interview/end/{session_id}")
+async def end_interview(session_id: str, background_tasks: BackgroundTasks,
+                        body: EndDrillRequest = None,
+                        user_id: str = Depends(get_current_user)):
+    """End interview → start async evaluation + review generation."""
+
+    # ── Drill mode ──
+    if session_id in _drill_sessions:
+        entry = _drill_sessions[session_id]
+        if entry.get("user_id") != user_id:
+            raise HTTPException(403, "Access denied.")
+
+        topic = entry["topic"]
+        questions = entry["questions"]
+        answers = body.answers if body and body.answers else []
+
+        save_drill_answers(session_id, answers, user_id=user_id)
+        del _drill_sessions[session_id]
+
+        _task_status[session_id] = {"status": "pending", "type": "drill_review"}
+        background_tasks.add_task(_end_drill_background, session_id, topic, questions, answers, user_id)
+
+        return {"session_id": session_id, "mode": "topic_drill", "status": "pending"}
+
+    # ── JD prep mode ──
+    if session_id in _job_prep_sessions:
+        entry = _job_prep_sessions[session_id]
+        if entry.get("user_id") != user_id:
+            raise HTTPException(403, "Access denied.")
+
+        questions = entry["questions"]
+        preview = entry["preview"]
+        meta = entry["meta"]
+        answers = body.answers if body and body.answers else []
+
+        save_drill_answers(session_id, answers, user_id=user_id)
         del _job_prep_sessions[session_id]
 
-        return {
-            "session_id": session_id,
-            "mode": InterviewMode.JD_PREP.value,
-            "review": review,
-            "scores": scores,
-            "overall": overall,
-            "meta": meta,
-            "position": meta.get("position"),
-            "company": meta.get("company"),
-        }
+        _task_status[session_id] = {"status": "pending", "type": "jd_review"}
+        background_tasks.add_task(_end_jd_prep_background, session_id, questions, answers, preview, meta, user_id)
 
-    # ── Resume mode: existing flow ──
+        return {"session_id": session_id, "mode": InterviewMode.JD_PREP.value, "status": "pending"}
+
+    # ── Resume mode: async review generation ──
     if session_id not in _graphs:
         raise HTTPException(404, "Session not found.")
 
@@ -857,50 +849,26 @@ async def end_interview(session_id: str, body: EndDrillRequest = None,
     config = entry["config"]
 
     state = graph.get_state(config)
-    messages = state.values.get("messages", [])
+    messages = list(state.values.get("messages", []))
     scores = state.values.get("scores", [])
     weak_points = state.values.get("weak_points", [])
     eval_history = state.values.get("eval_history", [])
     topic_name = state.values.get("topic_name", entry.get("topic"))
-
-    review = generate_review(
-        mode=entry["mode"],
-        messages=messages,
-        scores=scores,
-        weak_points=weak_points,
-        topic=topic_name,
-        eval_history=eval_history,
-    )
-
-    extraction = await update_profile_after_interview(
-        mode=entry["mode"].value,
-        topic=entry.get("topic"),
-        messages=messages,
-        user_id=user_id,
-        scores=scores,
-    )
-
-    # Persist dimension_scores + avg_score into session for later review loading
-    resume_overall = {}
-    if extraction.get("dimension_scores"):
-        resume_overall["dimension_scores"] = extraction["dimension_scores"]
-    if extraction.get("avg_score"):
-        resume_overall["avg_score"] = extraction["avg_score"]
-    save_review(session_id, review, scores, weak_points, overall=resume_overall, user_id=user_id)
+    mode = entry["mode"]
+    topic = entry.get("topic")
 
     del _graphs[session_id]
+
+    _task_status[session_id] = {"status": "pending", "type": "resume_review"}
+    background_tasks.add_task(
+        _generate_review_background,
+        session_id, mode, topic, messages, scores, weak_points, eval_history, topic_name, user_id,
+    )
 
     return {
         "session_id": session_id,
         "mode": "resume",
-        "review": review,
-        "profile_update": {
-            "new_weak_points": extraction.get("weak_points", []),
-            "new_strong_points": extraction.get("strong_points", []),
-            "session_summary": extraction.get("session_summary", ""),
-        },
-        "dimension_scores": extraction.get("dimension_scores"),
-        "avg_score": extraction.get("avg_score"),
+        "status": "pending",
     }
 
 
@@ -1276,6 +1244,15 @@ async def get_review(session_id: str, user_id: str = Depends(get_current_user)):
     if not session.get("review"):
         raise HTTPException(400, "Interview not yet reviewed.")
     return session
+
+
+@router.get("/tasks/{task_id}")
+async def get_task_status(task_id: str, user_id: str = Depends(get_current_user)):
+    """Poll async task status."""
+    task = _task_status.get(task_id)
+    if not task:
+        raise HTTPException(404, "Task not found.")
+    return {"task_id": task_id, **task}
 
 
 @router.get("/interview/history")

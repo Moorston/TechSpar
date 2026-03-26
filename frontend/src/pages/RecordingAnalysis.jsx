@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { CheckCircle2, FileText, Loader2, Upload, User, Users } from "lucide-react";
 import { transcribeRecording, analyzeRecording } from "../api/interview";
+import { useTaskStatus } from "../contexts/TaskStatusContext";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +70,7 @@ function buildSourceLabel({ inputTab, audioFile, transcriptCount }) {
 
 export default function RecordingAnalysis() {
   const navigate = useNavigate();
+  const { startTask } = useTaskStatus();
   const fileRef = useRef(null);
 
   const [recordingMode, setRecordingMode] = useState("dual");
@@ -79,12 +81,13 @@ export default function RecordingAnalysis() {
   const [position, setPosition] = useState("");
   const [transcribing, setTranscribing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState(null);
 
   const currentMode = RECORDING_MODES.find((item) => item.key === recordingMode) || RECORDING_MODES[0];
   const transcriptCount = transcript.trim().length;
   const canTranscribe = inputTab === "upload" && !!audioFile && transcriptCount === 0 && !transcribing && !analyzing;
-  const canAnalyze = transcriptCount > 0 && !transcribing && !analyzing;
+  const canAnalyze = transcriptCount > 0 && !transcribing && !analyzing && !submitted;
   const status = buildStatus({ inputTab, audioFile, transcriptCount, transcribing, analyzing });
   const sourceLabel = buildSourceLabel({ inputTab, audioFile, transcriptCount });
 
@@ -117,9 +120,11 @@ export default function RecordingAnalysis() {
     setError(null);
     try {
       const data = await analyzeRecording(transcript, recordingMode, company || null, position || null);
-      navigate(`/review/${data.session_id}`, { state: { ...data, mode: "recording" } });
+      setSubmitted(true);
+      startTask(data.session_id, "recording", "录音复盘生成中");
     } catch (err) {
       setError("分析失败: " + err.message);
+    } finally {
       setAnalyzing(false);
     }
   };

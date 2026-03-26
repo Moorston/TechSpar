@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import { Check, Minus, Star } from "lucide-react";
 import ChatBubble from "../components/ChatBubble";
 import { sendMessage, endInterview } from "../api/interview";
+import { useTaskStatus } from "../contexts/TaskStatusContext";
 import useVoiceInput from "../hooks/useVoiceInput";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,7 @@ export default function Interview() {
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { startTask } = useTaskStatus();
   const chatEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -33,6 +35,7 @@ export default function Interview() {
   const [answers, setAnswers] = useState({});
   const [drillInput, setDrillInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const drillVoice = useVoiceInput({
     onResult: useCallback((text) => setDrillInput((prev) => prev + text), []),
@@ -88,23 +91,13 @@ export default function Interview() {
         question_id: q.id,
         answer: answers[q.id] || "",
       }));
-      const data = await endInterview(sessionId, answerList);
-      navigate(`/review/${sessionId}`, {
-        state: {
-          review: data.review,
-          scores: data.scores,
-          overall: data.overall,
-          questions,
-          answers: answerList,
-          mode: initData.mode,
-          topic: initData.topic,
-          company: initData.company,
-          position: initData.position,
-          meta: data.meta || initData.meta,
-        },
-      });
+      await endInterview(sessionId, answerList);
+      setSubmitted(true);
+      const label = isJobPrep ? "JD 备面复盘生成中" : "专项训练复盘生成中";
+      const type = isJobPrep ? "jd_review" : "drill_review";
+      startTask(sessionId, type, label);
     } catch (err) {
-      alert("评估失败: " + err.message);
+      alert("提交失败: " + err.message);
     } finally {
       setSubmitting(false);
     }
@@ -132,18 +125,11 @@ export default function Interview() {
   const handleEndResume = async () => {
     setReviewing(true);
     try {
-      const data = await endInterview(sessionId);
-      navigate(`/review/${sessionId}`, {
-        state: {
-          review: data.review,
-          messages,
-          mode: "resume",
-          dimension_scores: data.dimension_scores,
-          avg_score: data.avg_score,
-        },
-      });
+      await endInterview(sessionId);
+      setFinished(true);
+      startTask(sessionId, "resume_review", "简历面试复盘生成中");
     } catch (err) {
-      alert("复盘生成失败: " + err.message);
+      alert("结束面试失败: " + err.message);
     } finally {
       setReviewing(false);
     }
@@ -223,8 +209,14 @@ export default function Interview() {
                   <div className="text-[15px] text-dim mb-6 leading-relaxed">
                     共 {totalQ} 题，已回答 {answeredCount} 题，跳过 {totalQ - answeredCount} 题
                   </div>
-                  <Button variant="gradient" size="lg" className="px-10" onClick={handleEndBatch}>
-                    提交评估
+                  <Button
+                    variant="gradient"
+                    size="lg"
+                    className="px-10"
+                    onClick={submitted ? () => navigate(`/review/${sessionId}`) : handleEndBatch}
+                    disabled={submitting}
+                  >
+                    {submitting ? "提交中..." : submitted ? "查看复盘" : "提交评估"}
                   </Button>
                 </CardContent>
               </Card>
@@ -339,7 +331,12 @@ export default function Interview() {
             </span>
           )}
         </div>
-        <Button variant="destructive" size="sm" onClick={handleEndResume} disabled={reviewing}>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={finished ? () => navigate(`/review/${sessionId}`) : handleEndResume}
+          disabled={reviewing}
+        >
           {reviewing ? "生成复盘中..." : finished ? "查看复盘" : "结束面试"}
         </Button>
       </div>

@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { TaskStatusProvider } from "./contexts/TaskStatusContext";
 import Sidebar from "./components/Sidebar";
+import TaskNotification from "./components/TaskNotification";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -87,9 +89,12 @@ function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <ErrorBoundary>
-          <AppRoutes />
-        </ErrorBoundary>
+        <TaskStatusProvider>
+          <ErrorBoundary>
+            <AppRoutes />
+            <TaskNotification />
+          </ErrorBoundary>
+        </TaskStatusProvider>
       </BrowserRouter>
     </AuthProvider>
   );
