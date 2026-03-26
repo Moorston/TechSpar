@@ -127,21 +127,13 @@ AI 读取你的简历，通过 LangGraph 状态机驱动完整流程：自我介
 
 ## 界面预览
 
-### 首页与训练总览
+### 首页与个人画像
 
-| Landing | Dashboard |
+| 首页 | 个人画像 |
 | --- | --- |
-| ![Landing page](images/landing.png) | ![Dashboard](images/home.png) |
+| ![Home dashboard](images/home.png) | ![Profile](images/profile.png) |
 
-首页解释训练逻辑，Dashboard 展示训练入口、近期进度和学习概览。
-
-### 个人画像
-
-| 画像总览 | 薄弱点与强项 | 沟通风格分析 |
-| --- | --- | --- |
-| ![Profile overview](images/profile-overview.png) | ![Profile insights](images/profile-insights.png) | ![Communication style analysis](images/profile-communication.png) |
-
-画像页集中展示掌握度、薄弱点、强项、思维模式与表达习惯。
+首页聚合训练入口、近期进度和学习概览，画像页集中展示训练统计、当前重点与近期信号。
 
 ### 知识库与题目图谱
 
@@ -151,9 +143,17 @@ AI 读取你的简历，通过 LangGraph 状态机驱动完整流程：自我介
 
 知识库负责维护训练依据，图谱页帮助你从全局观察题目分布与掌握情况。
 
+### 历史记录与领域回顾
+
+| 历史记录 | 领域详情与回顾 |
+| --- | --- |
+| ![History records](images/history.png) | ![Topic detail](images/topic-detail.png) |
+
+历史记录按训练类型回看过往复盘，领域详情页把单个训练方向的掌握度、阶段判断和持续薄弱点收拢在一起。
+
 ### JD 定向备面与录音复盘
 
-| JD-focused interview prep | Recording review |
+| JD 定向备面 | 录音复盘 |
 | --- | --- |
 | ![Job prep](images/job-prep.png) | ![Recording review](images/recording-review.png) |
 
