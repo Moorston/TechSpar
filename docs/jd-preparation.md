@@ -1,6 +1,6 @@
 # JD 定向备面
 
-![JD 定向备面界面](images/jd_prep.png)
+![JD 定向备面界面](.gitbook/assets/jd_prep.png)
 
 这个模式不是“直接开始一轮面试”，而是**先拆 JD，再开始训练**。
 
