@@ -683,13 +683,26 @@ function RealtimePhase({ prepId, onBack }) {
   const [manualInput, setManualInput] = useState("");
   const [currentUpdate, setCurrentUpdate] = useState(null);
   const [riskAlert, setRiskAlert] = useState(null);
+  const [streamingAnswer, setStreamingAnswer] = useState("");
+  const [answerLoading, setAnswerLoading] = useState(false);
   const [progressMsg, setProgressMsg] = useState("连接中...");
   const [started, setStarted] = useState(false);
   const chatEndRef = useRef(null);
 
   const handleUpdate = useCallback((msg) => {
     switch (msg.type) {
-      case "copilot_update": setCurrentUpdate(msg); break;
+      case "copilot_update":
+        setCurrentUpdate(msg);
+        setStreamingAnswer("");
+        setAnswerLoading(true);
+        break;
+      case "answer_chunk":
+        setStreamingAnswer((prev) => prev + (msg.text || ""));
+        setAnswerLoading(false);
+        break;
+      case "answer_done":
+        setAnswerLoading(false);
+        break;
       case "risk_alert": setRiskAlert(msg); break;
       case "progress": setProgressMsg(msg.message); break;
       case "started": setStarted(true); setProgressMsg(""); break;
@@ -791,7 +804,7 @@ function RealtimePhase({ prepId, onBack }) {
 
         <div className="w-[340px] xl:w-[400px] shrink-0 overflow-y-auto bg-card/30">
           {currentUpdate ? (
-            <CopilotPanel update={currentUpdate} riskAlert={riskAlert} />
+            <CopilotPanel update={currentUpdate} riskAlert={riskAlert} streamingAnswer={streamingAnswer} answerLoading={answerLoading} />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-dim text-sm px-6 text-center">
               <Brain size={32} className="mb-3 text-dim/30" />
@@ -805,11 +818,10 @@ function RealtimePhase({ prepId, onBack }) {
   );
 }
 
-function CopilotPanel({ update, riskAlert }) {
+function CopilotPanel({ update, riskAlert, streamingAnswer, answerLoading }) {
   const recommendedPoints = update?.recommended_points || [];
   const children = update?.children || [];
   const prepHint = update?.prep_hint;
-  const fullAnswer = update?.answer_full || "";
 
   return (
     <div className="p-4 space-y-4">
@@ -845,11 +857,15 @@ function CopilotPanel({ update, riskAlert }) {
         </div>
       )}
 
-      {/* 参考答案 — Answer Advisor LLM 生成，~1s 后出现 */}
-      {fullAnswer && (
+      {/* 参考答案 — 流式输出 */}
+      {(answerLoading || streamingAnswer) && (
         <div className="rounded-2xl border border-green/20 bg-green/5 p-4">
           <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green/80 mb-3">参考答案</div>
-          <p className="text-sm leading-7 text-text/85">{fullAnswer}</p>
+          {answerLoading && !streamingAnswer ? (
+            <p className="text-sm text-dim/60 animate-pulse">正在生成...</p>
+          ) : (
+            <p className="text-sm leading-7 text-text/85">{streamingAnswer}</p>
+          )}
         </div>
       )}
 

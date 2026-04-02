@@ -1730,7 +1730,7 @@ async def _init_copilot_session(
 async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
     """处理 HR 的一句话：意图分类 → 策略树查表 + 回答建议。"""
     from backend.copilot.intent_classifier import classify_intent
-    from backend.copilot.answer_advisor import advise_answer
+    from backend.copilot.answer_advisor import prepare_advice_context, stream_advice
 
     navigator = session.get("navigator")
     prep = session.get("prep", {})
@@ -1761,10 +1761,9 @@ async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
                 prep_hint = hint
                 break
 
-    # Step 3: Answer Advisor — 针对 HR 具体问法生成答案 (1次LLM, ~1s)
-    advice = await advise_answer(text, node_id, navigator, prep)
+    # Step 3: 准备上下文 + 先发策略树结果
+    ctx = prepare_advice_context(text, node_id, navigator, prep)
 
-    # 发送分析结果
     await ws.send_json({
         "type": "copilot_update",
         "intent": intent,
@@ -1777,17 +1776,23 @@ async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
             "safe_talking_points": prep_hint.get("safe_talking_points", []),
             "redirect_suggestion": prep_hint.get("redirect_suggestion", ""),
         } if prep_hint else None,
-        "answer_full": advice.get("full_answer", ""),
     })
 
-    # 风险警告单独发送（如果有）
-    risk_alert = advice.get("risk_alert")
-    if risk_alert:
+    # 风险警告（如果有）
+    if ctx["risk_alert"]:
         await ws.send_json({
             "type": "risk_alert",
-            "message": risk_alert,
+            "message": ctx["risk_alert"],
             "node_id": node_id,
         })
+
+    # Step 4: 流式推送 LLM 生成的答案
+    async for chunk in stream_advice(ctx["prompt"]):
+        await ws.send_json({
+            "type": "answer_chunk",
+            "text": chunk,
+        })
+    await ws.send_json({"type": "answer_done"})
 
 
 app.include_router(router)

@@ -19,12 +19,27 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
   const workletRef = useRef(null);
   const audioCtxRef = useRef(null);
   const onUpdateRef = useRef(onUpdate);
+  const reconnectTimer = useRef(null);
+  const sessionIdRef = useRef(null);
+  const manualClose = useRef(false);
 
   useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+
+  const scheduleReconnect = useCallback(() => {
+    if (manualClose.current || !sessionIdRef.current) return;
+    clearTimeout(reconnectTimer.current);
+    reconnectTimer.current = setTimeout(() => {
+      console.log("[Copilot WS] reconnecting...");
+      connect(sessionIdRef.current);
+    }, 2000);
+  }, []);  // connect added below via circular ref — safe because scheduleReconnect only reads it
 
   /** 建立 WebSocket 连接 */
   const connect = useCallback((sessionId) => {
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
+
+    sessionIdRef.current = sessionId;
+    manualClose.current = false;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws/copilot/${sessionId}`);
@@ -48,6 +63,8 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
             break;
           case "copilot_update":
           case "risk_alert":
+          case "answer_chunk":
+          case "answer_done":
           case "progress":
           case "started":
           case "stopped":
@@ -59,10 +76,10 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
     };
 
     ws.onclose = () => {
-      // 只有当前活跃的 WS 关闭才更新状态，避免 Strict Mode 竞态
       if (wsRef.current === ws) {
         setConnected(false);
         wsRef.current = null;
+        scheduleReconnect();
       }
     };
 
@@ -73,7 +90,7 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
     };
 
     wsRef.current = ws;
-  }, [prepId]);
+  }, [prepId, scheduleReconnect]);
 
   /** 开始录音并推流 PCM */
   const startListening = useCallback(async () => {
@@ -132,6 +149,8 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
 
   /** 断开连接 */
   const disconnect = useCallback(() => {
+    manualClose.current = true;
+    clearTimeout(reconnectTimer.current);
     stopListening();
     if (wsRef.current) {
       try { wsRef.current.send(JSON.stringify({ type: "stop" })); } catch { /* ok */ }
@@ -144,6 +163,8 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      manualClose.current = true;
+      clearTimeout(reconnectTimer.current);
       stopListening();
       if (wsRef.current) {
         try { wsRef.current.close(); } catch { /* cleanup */ }
