@@ -1627,6 +1627,8 @@ async def copilot_realtime_ws(ws: WebSocket, session_id: str):
                     )
                     _copilot_sessions[session_id] = session
                     await ws.send_json({"type": "started", "session_id": session_id})
+                    # Warmup: 测一次 LLM 速度
+                    asyncio.create_task(_run_warmup(ws))
                 except Exception as init_err:
                     logger.error(f"Copilot session init failed: {init_err}", exc_info=True)
                     await ws.send_json({"type": "error", "message": f"初始化失败: {init_err}"})
@@ -1636,6 +1638,14 @@ async def copilot_realtime_ws(ws: WebSocket, session_id: str):
                 text = msg.get("text", "").strip()
                 if text:
                     await _process_hr_utterance(ws, session, text)
+
+            elif msg_type == "candidate_response" and session:
+                # 候选人手动输入自己的回答（仅存入对话历史，不触发 Answer Coach）
+                text = msg.get("text", "").strip()
+                if text:
+                    session.get("conversation", []).append({"role": "candidate", "text": text})
+                    # 候选人回答后触发 Interview Monitor（后台）
+                    asyncio.create_task(_run_interview_monitor(ws, session))
 
             elif msg_type == "stop":
                 if session and session.get("asr"):
@@ -1723,27 +1733,34 @@ async def _init_copilot_session(
         "navigator": navigator,
         "prep": prep_result,
         "conversation": [],
+        "last_node_id": None,
+        "turn_count": 0,
     }
 
 
 
 async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
-    """处理 HR 的一句话：意图分类 → 策略树查表 + 回答建议。"""
+    """处理 HR 的一句话：Intent Router (同步) → 3 个 Agent 并发。"""
     from backend.copilot.intent_classifier import classify_intent
     from backend.copilot.answer_advisor import prepare_advice_context, stream_advice
+    from backend.copilot import hr_profiler
 
     navigator = session.get("navigator")
     prep = session.get("prep", {})
     conversation = session.get("conversation", [])
 
     conversation.append({"role": "hr", "text": text})
+    session["turn_count"] = session.get("turn_count", 0) + 1
 
-    # Step 1: Intent Classification — 定位策略树节点 (<200ms)
-    intent_result = await classify_intent(text, navigator)
+    # ── Step 1: Intent Router (同步, <200ms, 不调 LLM) ──
+    intent_result = await classify_intent(text, navigator, last_node_id=session.get("last_node_id"))
     node_id = intent_result.get("node_id")
     intent = intent_result.get("intent", "unknown")
 
-    # Step 2: 策略树查表 — 瞬间出稿子（回答要点 + 追问方向 + 引导建议）
+    if node_id:
+        session["last_node_id"] = node_id
+
+    # ── Step 2: 策略树查表 (瞬间) ──
     node = navigator.get_node(node_id) if node_id else None
     children_list = []
     recommended_points = []
@@ -1755,14 +1772,13 @@ async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
             for c in children
         ]
         recommended_points = node.get("recommended_points", [])
-        # 查找对应的 prep_hint
         for hint in prep.get("prep_hints", []):
             if hint.get("node_id") == node_id:
                 prep_hint = hint
                 break
 
-    # Step 3: 准备上下文 + 先发策略树结果
-    ctx = prepare_advice_context(text, node_id, navigator, prep)
+    # ── Step 3: 立即推送策略树结果 ──
+    ctx = prepare_advice_context(text, node_id, navigator, prep, conversation=conversation)
 
     await ws.send_json({
         "type": "copilot_update",
@@ -1778,7 +1794,6 @@ async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
         } if prep_hint else None,
     })
 
-    # 风险警告（如果有）
     if ctx["risk_alert"]:
         await ws.send_json({
             "type": "risk_alert",
@@ -1786,13 +1801,82 @@ async def _process_hr_utterance(ws: WebSocket, session: dict, text: str):
             "node_id": node_id,
         })
 
-    # Step 4: 流式推送 LLM 生成的答案
-    async for chunk in stream_advice(ctx["prompt"]):
+    # ── Step 4: 并发启动 Agent ──
+
+    # Agent 1: Answer Coach (流式, 必须 await 因为要逐 chunk 推送)
+    async def run_answer_coach():
+        async for item in stream_advice(ctx["prompt"]):
+            if item["type"] == "chunk":
+                await ws.send_json({"type": "answer_chunk", "text": item["text"]})
+            elif item["type"] == "meta":
+                await ws.send_json({"type": "answer_meta", "first_token_ms": item["first_token_ms"]})
+            elif item["type"] == "done":
+                await ws.send_json({"type": "answer_done", "total_ms": item.get("total_ms"), "chunk_count": item.get("chunk_count")})
+
+    # Agent 2: HR Profiler (后台, 每 3 轮触发)
+    # Agent 3: Interview Monitor (后台, 每轮触发)
+    # 后台 agent 用 create_task 并发，不阻塞 Answer Coach
+    if hr_profiler.should_run(session["turn_count"]):
+        asyncio.create_task(_run_hr_profiler(ws, session))
+    asyncio.create_task(_run_interview_monitor(ws, session))
+
+    # Answer Coach 流式推送（主流程等待）
+    await run_answer_coach()
+
+
+async def _run_warmup(ws: WebSocket):
+    """连接后自动测一次 LLM 速度。"""
+    import time
+    from backend.llm_provider import get_copilot_llm
+    from langchain_core.messages import HumanMessage
+    try:
+        llm = get_copilot_llm(streaming=True)
+        t0 = time.monotonic()
+        chunk_count = 0
+        first_token_ms = None
+        async for chunk in llm.astream([HumanMessage(content="说一个字：好")]):
+            if chunk.content:
+                chunk_count += 1
+                if chunk_count == 1:
+                    first_token_ms = round((time.monotonic() - t0) * 1000)
+        total_ms = round((time.monotonic() - t0) * 1000)
         await ws.send_json({
-            "type": "answer_chunk",
-            "text": chunk,
+            "type": "answer_meta",
+            "first_token_ms": first_token_ms or total_ms,
         })
-    await ws.send_json({"type": "answer_done"})
+        await ws.send_json({
+            "type": "answer_done",
+            "total_ms": total_ms,
+            "chunk_count": chunk_count,
+        })
+        logger.info(f"Warmup: first_token={first_token_ms}ms total={total_ms}ms")
+    except Exception as e:
+        logger.warning(f"Warmup failed: {e}")
+
+
+async def _run_hr_profiler(ws: WebSocket, session: dict):
+    """后台运行 HR Profiler，完成后推送结果。"""
+    from backend.copilot.hr_profiler import analyze_hr
+    try:
+        result = await analyze_hr(session.get("conversation", []))
+        if result:
+            await ws.send_json({"type": "hr_profile_update", **result})
+    except Exception as e:
+        logger.error(f"HR Profiler task error: {e}")
+
+
+async def _run_interview_monitor(ws: WebSocket, session: dict):
+    """后台运行 Interview Monitor，完成后推送结果。"""
+    from backend.copilot.interview_monitor import analyze_interview
+    try:
+        result = await analyze_interview(
+            session.get("conversation", []),
+            session.get("prep", {}),
+        )
+        if result:
+            await ws.send_json({"type": "monitor_update", **result})
+    except Exception as e:
+        logger.error(f"Interview Monitor task error: {e}")
 
 
 app.include_router(router)

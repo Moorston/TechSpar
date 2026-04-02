@@ -1,4 +1,4 @@
-"""Answer Advisor — 结合策略树预计算 + LLM 流式生成回答建议。"""
+"""Answer Coach — 结合策略树 + 完整对话上下文，流式生成回答建议。"""
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -10,18 +10,30 @@ from backend.copilot.strategy_tree import StrategyTreeNavigator
 
 logger = logging.getLogger("uvicorn")
 
-_ADVISE_PROMPT = """你是一个面试教练。HR 刚问了候选人一个问题，请给出完整示例答案。
+_ADVISE_PROMPT = """你是一个面试教练，正在实时辅助候选人。HR 刚说了一句话，请给出候选人应该怎么回答的建议。
 
-HR 的问题: {utterance}
+{conversation_section}HR 最新发言: {utterance}
 候选人背景亮点: {highlights}
 候选人弱点提醒: {weak_points}
 已知回答要点参考: {key_points}
 
 要求：
-- 结合候选人背景和上述要点，写一段完整的示例答案，200字以内，自然口语化，像候选人在面试中真实说的话
+- 结合对话上下文和候选人背景，写一段完整的示例答案，200字以内，自然口语化
+- 如果 HR 是在追问或要求展开，答案要衔接候选人之前说过的内容，不要重复
 - 如涉及弱点领域，答案中要有合理引导和转移
-- 不要重复罗列要点，直接输出一段完整的回答
+- 直接输出一段完整的回答
 直接输出答案文本，不要任何前缀、标记或 JSON 格式。"""
+
+
+def _format_conversation(conversation: list[dict]) -> str:
+    """将对话历史格式化为 prompt 段落。"""
+    if not conversation:
+        return ""
+    lines = []
+    for turn in conversation:
+        role = "HR" if turn.get("role") == "hr" else "候选人"
+        lines.append(f"  {role}: {turn['text']}")
+    return "对话历史:\n" + "\n".join(lines) + "\n\n"
 
 
 def prepare_advice_context(
@@ -29,6 +41,7 @@ def prepare_advice_context(
     node_id: str | None,
     navigator: StrategyTreeNavigator,
     prep_state: dict,
+    conversation: list[dict] | None = None,
 ) -> dict:
     """预处理策略树上下文，返回 risk_alert 和构建好的 prompt。"""
     risk_alert = None
@@ -63,21 +76,27 @@ def prepare_advice_context(
         for wp in weak_points[:5]
     ) or "无"
 
+    # 完整对话历史（不包含当前这句，当前这句在 utterance 里）
+    conv_for_prompt = conversation[:-1] if conversation else []
+    conversation_section = _format_conversation(conv_for_prompt)
+
     prompt = _ADVISE_PROMPT.format(
         utterance=utterance,
         highlights=highlight_text,
         weak_points=weak_text,
         key_points="; ".join(key_points[:5]) or "无",
+        conversation_section=conversation_section,
     )
     return {"prompt": prompt, "risk_alert": risk_alert}
 
 
-async def stream_advice(prompt: str) -> AsyncIterator[str]:
-    """流式调用 LLM，逐 chunk yield 文本。"""
+async def stream_advice(prompt: str) -> AsyncIterator[dict]:
+    """流式调用 LLM。yield dict: {"type": "chunk", "text": ...} 或 {"type": "meta", ...}。"""
     llm = get_copilot_llm(streaming=True)
-    logger.info(f"Answer advisor streaming LLM: model={llm.model_name}, base_url={llm.openai_api_base}")
+    logger.info(f"Answer Coach streaming: model={llm.model_name}")
     t0 = time.monotonic()
     chunk_count = 0
+    first_token_ms = None
     try:
         async for chunk in llm.astream([
             SystemMessage(content="直接输出答案，不要 JSON 格式"),
@@ -85,12 +104,17 @@ async def stream_advice(prompt: str) -> AsyncIterator[str]:
         ]):
             if chunk.content:
                 chunk_count += 1
-                if chunk_count <= 3:
-                    logger.info(f"Answer advisor chunk #{chunk_count} at {time.monotonic() - t0:.1f}s: {chunk.content[:30]!r}")
-                yield chunk.content
-        logger.info(f"Answer advisor stream completed in {time.monotonic() - t0:.1f}s, {chunk_count} chunks")
+                if chunk_count == 1:
+                    first_token_ms = round((time.monotonic() - t0) * 1000)
+                    logger.info(f"Answer Coach first token at {first_token_ms}ms")
+                    yield {"type": "meta", "first_token_ms": first_token_ms}
+                yield {"type": "chunk", "text": chunk.content}
+        total_ms = round((time.monotonic() - t0) * 1000)
+        logger.info(f"Answer Coach completed in {total_ms}ms, {chunk_count} chunks")
+        yield {"type": "done", "total_ms": total_ms, "chunk_count": chunk_count}
     except Exception as e:
-        logger.error(f"Answer advisor stream failed after {time.monotonic() - t0:.1f}s: {type(e).__name__}: {e}")
+        logger.error(f"Answer Coach failed after {time.monotonic() - t0:.1f}s: {type(e).__name__}: {e}")
+        yield {"type": "done", "total_ms": round((time.monotonic() - t0) * 1000), "chunk_count": chunk_count}
 
 
 def _find_risk_hint(node_id: str, prep_hints: list[dict]) -> dict | None:

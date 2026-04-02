@@ -32,20 +32,32 @@ def rule_based_classify(utterance: str) -> str:
 async def classify_intent(
     utterance: str,
     navigator: StrategyTreeNavigator,
+    last_node_id: str | None = None,
 ) -> dict:
     """分类 HR 发言意图，返回 {intent, node_id, confidence, utterance_embedding}。
 
     优先 embedding 匹配策略树节点，匹配不上则规则兜底。
-    utterance_embedding 透传给调用方用于 correction 命中判断。
+    低置信度时 fallback 到 last_node_id（追问场景）。
     """
     embed_model = get_embedding()
     try:
         utt_emb = embed_model.get_text_embedding(utterance)
     except Exception as e:
         logger.warning(f"Embedding failed, falling back to rules: {e}")
-        return {"intent": rule_based_classify(utterance), "node_id": None, "confidence": 0.0, "utterance_embedding": None}
+        return {"intent": rule_based_classify(utterance), "node_id": last_node_id, "confidence": 0.0, "utterance_embedding": None}
 
     node_id, intent, score = navigator.match_utterance(utt_emb)
+
+    # 低置信度 + 有上一轮节点 → 视为追问，沿用上一个节点
+    if (node_id is None or score < 0.5) and last_node_id:
+        prev_node = navigator.get_node(last_node_id)
+        if prev_node:
+            return {
+                "intent": prev_node.get("intent", "unknown"),
+                "node_id": last_node_id,
+                "confidence": round(score, 3),
+                "utterance_embedding": utt_emb,
+            }
 
     if node_id is None:
         return {

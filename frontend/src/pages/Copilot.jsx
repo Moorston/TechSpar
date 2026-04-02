@@ -4,7 +4,7 @@ import {
   Brain, CheckCircle2, ChevronRight, Loader2, Mic, MicOff,
   AlertTriangle, Send, Eye, Radio, ArrowRight, Shield, Target,
   Sparkles, FileText, User, ShieldAlert, Plus, Trash2, Clock,
-  ChevronLeft, Building2,
+  ChevronLeft, Building2, Maximize2, Minimize2,
 } from "lucide-react";
 import {
   listCopilotPreps,
@@ -685,6 +685,11 @@ function RealtimePhase({ prepId, onBack }) {
   const [riskAlert, setRiskAlert] = useState(null);
   const [streamingAnswer, setStreamingAnswer] = useState("");
   const [answerLoading, setAnswerLoading] = useState(false);
+  const [hrProfile, setHrProfile] = useState(null);
+  const [monitorData, setMonitorData] = useState(null);
+  const [perfMetrics, setPerfMetrics] = useState(null);
+  const [inputRole, setInputRole] = useState("hr");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [progressMsg, setProgressMsg] = useState("连接中...");
   const [started, setStarted] = useState(false);
   const chatEndRef = useRef(null);
@@ -695,24 +700,31 @@ function RealtimePhase({ prepId, onBack }) {
         setCurrentUpdate(msg);
         setStreamingAnswer("");
         setAnswerLoading(true);
+        setPerfMetrics(null);
         break;
       case "answer_chunk":
         setStreamingAnswer((prev) => prev + (msg.text || ""));
         setAnswerLoading(false);
         break;
+      case "answer_meta":
+        setPerfMetrics((prev) => ({ ...prev, warming: false, firstTokenMs: msg.first_token_ms }));
+        break;
       case "answer_done":
         setAnswerLoading(false);
+        setPerfMetrics((prev) => ({ ...prev, warming: false, totalMs: msg.total_ms, chunkCount: msg.chunk_count }));
         break;
+      case "hr_profile_update": setHrProfile(msg); break;
+      case "monitor_update": setMonitorData(msg); break;
       case "risk_alert": setRiskAlert(msg); break;
       case "progress": setProgressMsg(msg.message); break;
-      case "started": setStarted(true); setProgressMsg(""); break;
+      case "started": setStarted(true); setProgressMsg(""); setPerfMetrics({ warming: true }); break;
       case "error": setProgressMsg(`Error: ${msg.message}`); break;
     }
   }, []);
 
   const {
     connected, listening, asrText, lastFinal,
-    connect, startListening, stopListening, sendManualText, disconnect,
+    connect, startListening, stopListening, sendManualText, sendCandidateResponse, disconnect,
   } = useCopilotStream({ prepId, onUpdate: handleUpdate });
 
   useEffect(() => { connect(sessionId); }, [connect, sessionId]);
@@ -725,11 +737,31 @@ function RealtimePhase({ prepId, onBack }) {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [conversation, currentUpdate]);
 
+  // Fullscreen
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  };
+
   const handleManualSend = () => {
     const text = manualInput.trim();
     if (!text) return;
-    setConversation((prev) => [...prev, { role: "hr", text }]);
-    sendManualText(text);
+    if (inputRole === "hr") {
+      setConversation((prev) => [...prev, { role: "hr", text }]);
+      sendManualText(text);
+    } else {
+      setConversation((prev) => [...prev, { role: "candidate", text }]);
+      sendCandidateResponse(text);
+    }
     setManualInput("");
   };
 
@@ -741,6 +773,7 @@ function RealtimePhase({ prepId, onBack }) {
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* ── Top Bar ── */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0 bg-card/50">
         <div className="flex items-center gap-3">
           <Brain size={20} className="text-primary" />
@@ -748,11 +781,36 @@ function RealtimePhase({ prepId, onBack }) {
           <Badge variant={connected ? "green" : "destructive"} className="text-xs">
             {connected ? "已连接" : "未连接"}
           </Badge>
+          {/* LLM 性能指标 */}
+          {perfMetrics && (
+            <div className="flex items-center gap-1.5 text-[11px] text-dim/70 tabular-nums ml-2 bg-card/80 border border-border/50 rounded-full px-2.5 py-1">
+              {perfMetrics.warming ? (
+                <>
+                  <Loader2 size={10} className="animate-spin text-primary/50" />
+                  <span>LLM 测速中...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={10} className="text-primary/50" />
+                  <span>{(perfMetrics.firstTokenMs / 1000).toFixed(1)}s 首token</span>
+                  {perfMetrics.totalMs > 0 && (
+                    <>
+                      <span className="text-border">·</span>
+                      <span>{(perfMetrics.totalMs / 1000).toFixed(1)}s 总耗时</span>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant={listening ? "destructive" : "outline"} className="rounded-2xl" onClick={listening ? stopListening : startListening} disabled={!connected || !started}>
             {listening ? <MicOff size={14} className="mr-1.5" /> : <Mic size={14} className="mr-1.5" />}
             {listening ? "停止录音" : "开始录音"}
+          </Button>
+          <Button size="icon" variant="ghost" className="rounded-2xl h-9 w-9" onClick={toggleFullscreen}>
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </Button>
           <Button size="sm" variant="ghost" className="rounded-2xl" onClick={handleEnd}>
             结束面试
@@ -767,6 +825,7 @@ function RealtimePhase({ prepId, onBack }) {
       )}
 
       <div className="flex-1 flex overflow-hidden">
+        {/* ── Left: Chat ── */}
         <div className="flex-1 flex flex-col border-r border-border">
           {asrText && (
             <div className="px-5 py-2.5 bg-card/50 border-b border-border/50 text-sm text-dim shrink-0">
@@ -774,6 +833,26 @@ function RealtimePhase({ prepId, onBack }) {
               HR: {asrText}
             </div>
           )}
+
+          {/* Sticky 横条：面试动态 + HR 画像（始终显示） */}
+          <div className="px-4 py-2.5 border-b border-border/50 bg-card/30 shrink-0 flex gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2 text-[12px] min-w-0">
+              <Badge variant="outline" className="text-[10px] shrink-0 border-cyan-500/30 text-cyan-400">
+                {monitorData?.phase || "等待中"}
+              </Badge>
+              <span className={cn("truncate", monitorData?.strategy_tip ? "text-cyan-300/80" : "text-dim/40")}>
+                {monitorData?.strategy_tip || "面试开始后显示战略建议"}
+              </span>
+            </div>
+            <div className="w-px bg-border/50 shrink-0" />
+            <div className="flex items-center gap-2 text-[12px] min-w-0">
+              <span className="text-violet-400/70 font-semibold shrink-0">HR</span>
+              <span className={cn("truncate", hrProfile ? "text-violet-300/70" : "text-dim/40")}>
+                {hrProfile?.advice || hrProfile?.style || "3 轮对话后分析 HR 风格"}
+              </span>
+            </div>
+          </div>
+
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
             {conversation.length === 0 && started && (
               <div className="flex flex-col items-center justify-center h-full text-dim text-sm">
@@ -795,84 +874,113 @@ function RealtimePhase({ prepId, onBack }) {
             <div ref={chatEndRef} />
           </div>
           <div className="px-4 py-3 border-t border-border shrink-0 flex gap-2">
-            <Input className="h-11 rounded-2xl" placeholder="手动输入 HR 的问题..." value={manualInput} onChange={(e) => setManualInput(e.target.value)} onKeyDown={handleKeyDown} disabled={!connected || !started} />
+            <Button
+              size="sm"
+              variant={inputRole === "hr" ? "outline" : "secondary"}
+              className="rounded-2xl h-11 px-3 shrink-0 text-xs font-semibold min-w-[52px]"
+              onClick={() => setInputRole(inputRole === "hr" ? "candidate" : "hr")}
+              disabled={!connected || !started}
+            >
+              {inputRole === "hr" ? "HR" : "You"}
+            </Button>
+            <Input className="h-11 rounded-2xl" placeholder={inputRole === "hr" ? "手动输入 HR 的问题..." : "记录你的回答..."} value={manualInput} onChange={(e) => setManualInput(e.target.value)} onKeyDown={handleKeyDown} disabled={!connected || !started} />
             <Button size="icon" className="rounded-2xl h-11 w-11 shrink-0" onClick={handleManualSend} disabled={!manualInput.trim() || !started}>
               <Send size={16} />
             </Button>
           </div>
         </div>
 
+        {/* ── Right: Copilot Panel (始终显示) ── */}
         <div className="w-[340px] xl:w-[400px] shrink-0 overflow-y-auto bg-card/30">
-          {currentUpdate ? (
-            <CopilotPanel update={currentUpdate} riskAlert={riskAlert} streamingAnswer={streamingAnswer} answerLoading={answerLoading} />
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-dim text-sm px-6 text-center">
-              <Brain size={32} className="mb-3 text-dim/30" />
-              <p className="font-medium">等待 HR 提问...</p>
-              <p className="text-xs mt-1.5 text-dim/60">Copilot 会实时分析并给出建议</p>
-            </div>
-          )}
+          <CopilotPanel update={currentUpdate} riskAlert={riskAlert} streamingAnswer={streamingAnswer} answerLoading={answerLoading} monitorData={monitorData} />
         </div>
       </div>
     </div>
   );
 }
 
-function CopilotPanel({ update, riskAlert, streamingAnswer, answerLoading }) {
+function CopilotPanel({ update, riskAlert, streamingAnswer, answerLoading, monitorData }) {
   const recommendedPoints = update?.recommended_points || [];
   const children = update?.children || [];
   const prepHint = update?.prep_hint;
+  const hasData = !!update;
 
   return (
     <div className="p-4 space-y-4">
+      {/* 回答评价 */}
+      <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-400/80 mb-1.5">回答评价</div>
+        {monitorData?.last_answer_feedback ? (
+          <>
+            <p className="text-sm leading-6 text-text/80">{monitorData.last_answer_feedback}</p>
+            {monitorData.uncovered_topics?.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-cyan-500/10">
+                <span className="text-[11px] text-dim/60">未覆盖：</span>
+                <span className="text-[12px] text-dim/80">{monitorData.uncovered_topics.join("、")}</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-dim/40">候选人回答后自动评价</p>
+        )}
+      </div>
+
       {/* 当前考察 */}
       <div className="rounded-2xl border border-border/75 bg-card/75 p-4">
         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-dim/80 mb-2">当前考察</div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Badge variant="blue">{update?.intent || "unknown"}</Badge>
-          {update?.topic && <span className="text-sm font-medium">{update.topic}</span>}
-          {update?.confidence > 0 && (
-            <span className="text-xs text-dim ml-auto tabular-nums">{Math.round(update.confidence * 100)}%</span>
-          )}
-        </div>
+        {hasData ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="blue">{update.intent || "unknown"}</Badge>
+            {update.topic && <span className="text-sm font-medium">{update.topic}</span>}
+            {update.confidence > 0 && (
+              <span className="text-xs text-dim ml-auto tabular-nums">{Math.round(update.confidence * 100)}%</span>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-dim/40">等待 HR 提问...</p>
+        )}
       </div>
 
-      {/* 回答要点 — 策略树预计算，瞬间出现 */}
-      {recommendedPoints.length > 0 && (
-        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80 mb-3">回答要点</div>
-          <ul className="space-y-1.5">
-            {recommendedPoints.map((point, i) => (
-              <li key={i} className="text-sm leading-6 flex items-start gap-2">
-                <span className="text-primary/50 mt-1.5 shrink-0">•</span>
-                {point}
-              </li>
-            ))}
-          </ul>
-          {prepHint?.redirect_suggestion && (
-            <div className="mt-3 pt-3 border-t border-primary/10 text-[12px] text-primary/70 leading-5">
-              <span className="font-semibold">引导方向：</span>{prepHint.redirect_suggestion}
-            </div>
-          )}
-        </div>
-      )}
+      {/* 回答要点 */}
+      <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/80 mb-3">回答要点</div>
+        {recommendedPoints.length > 0 ? (
+          <>
+            <ul className="space-y-1.5">
+              {recommendedPoints.map((point, i) => (
+                <li key={i} className="text-sm leading-6 flex items-start gap-2">
+                  <span className="text-primary/50 mt-1.5 shrink-0">•</span>
+                  {point}
+                </li>
+              ))}
+            </ul>
+            {prepHint?.redirect_suggestion && (
+              <div className="mt-3 pt-3 border-t border-primary/10 text-[12px] text-primary/70 leading-5">
+                <span className="font-semibold">引导方向：</span>{prepHint.redirect_suggestion}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-dim/40">策略树匹配后瞬间出现</p>
+        )}
+      </div>
 
-      {/* 参考答案 — 流式输出 */}
-      {(answerLoading || streamingAnswer) && (
-        <div className="rounded-2xl border border-green/20 bg-green/5 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green/80 mb-3">参考答案</div>
-          {answerLoading && !streamingAnswer ? (
-            <p className="text-sm text-dim/60 animate-pulse">正在生成...</p>
-          ) : (
-            <p className="text-sm leading-7 text-text/85">{streamingAnswer}</p>
-          )}
-        </div>
-      )}
+      {/* 参考答案 */}
+      <div className="rounded-2xl border border-green/20 bg-green/5 p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-green/80 mb-3">参考答案</div>
+        {answerLoading && !streamingAnswer ? (
+          <p className="text-sm text-dim/60 animate-pulse">正在生成...</p>
+        ) : streamingAnswer ? (
+          <p className="text-sm leading-7 text-text/85">{streamingAnswer}</p>
+        ) : (
+          <p className="text-sm text-dim/40">Answer Coach 流式生成</p>
+        )}
+      </div>
 
-      {/* 可能追问 — 策略树 children，瞬间出现 */}
-      {children.length > 0 && (
-        <div className="rounded-2xl border border-border/75 bg-card/75 p-4">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-dim/80 mb-3">可能追问</div>
+      {/* 可能追问 */}
+      <div className="rounded-2xl border border-border/75 bg-card/75 p-4">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-dim/80 mb-3">可能追问</div>
+        {children.length > 0 ? (
           <div className="space-y-2.5">
             {children.map((c, i) => (
               <div key={i} className="rounded-xl border border-border/60 bg-background/60 px-3 py-2.5 text-sm">
@@ -883,8 +991,10 @@ function CopilotPanel({ update, riskAlert, streamingAnswer, answerLoading }) {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-sm text-dim/40">策略树子节点预测</p>
+        )}
+      </div>
 
       {/* 风险提示 */}
       {riskAlert && (

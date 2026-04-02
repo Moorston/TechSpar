@@ -64,7 +64,10 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
           case "copilot_update":
           case "risk_alert":
           case "answer_chunk":
+          case "answer_meta":
           case "answer_done":
+          case "hr_profile_update":
+          case "monitor_update":
           case "progress":
           case "started":
           case "stopped":
@@ -147,6 +150,13 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
     }
   }, []);
 
+  /** 手动输入候选人回答 */
+  const sendCandidateResponse = useCallback((text) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "candidate_response", text }));
+    }
+  }, []);
+
   /** 断开连接 */
   const disconnect = useCallback(() => {
     manualClose.current = true;
@@ -181,6 +191,7 @@ export default function useCopilotStream({ prepId, onUpdate } = {}) {
     startListening,
     stopListening,
     sendManualText,
+    sendCandidateResponse,
     disconnect,
   };
 }
