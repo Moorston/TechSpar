@@ -177,6 +177,31 @@ EMBEDDING_API_MODEL=BAAI/bge-m3
 
 如果你使用官方 OpenAI embedding 接口，`EMBEDDING_API_BASE` 可以留空。
 
+如果你只是想先把项目跑起来，不一定要先购买模型服务。一个简单的免费示例是：
+
+- 主 LLM：ModelScope 的 `ZhipuAI/GLM-5`
+- Embedding：SiliconFlow 的 `BAAI/bge-large-zh-v1.5`
+
+注册入口：
+
+- ModelScope: <https://modelscope.cn/home>
+- SiliconFlow: <https://cloud.siliconflow.cn/>
+
+配置示例：
+
+```env
+API_BASE=https://api-inference.modelscope.cn/v1
+API_KEY=your-modelscope-sdk-token
+MODEL=ZhipuAI/GLM-5
+
+EMBEDDING_BACKEND=api
+EMBEDDING_API_BASE=https://api.siliconflow.cn/v1
+EMBEDDING_API_KEY=sk-your-siliconflow-key
+EMBEDDING_API_MODEL=BAAI/bge-large-zh-v1.5
+```
+
+`API_KEY` 填 ModelScope 的 SDK Token，`EMBEDDING_API_KEY` 填 SiliconFlow 的 API Key。主 LLM 和 Embedding 可以分开用不同服务商；具体免费额度、限速和可用模型以两家官网当前页面为准。
+
 认证默认值如下，不配置也能启动：
 
 ```env

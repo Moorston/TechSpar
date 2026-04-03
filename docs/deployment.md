@@ -41,6 +41,31 @@ EMBEDDING_API_MODEL=your-embedding-model
 * `EMBEDDING_API_KEY`：Embedding 接口密钥。
 * `EMBEDDING_API_MODEL`：Embedding 模型名。这里不要照抄示例，应该改成你的服务实际支持的模型。
 
+如果你只是想先把项目跑起来，不一定要先购买模型服务。一个简单的免费示例是：
+
+* 主 LLM：ModelScope 的 `ZhipuAI/GLM-5`
+* Embedding：SiliconFlow 的 `BAAI/bge-large-zh-v1.5`
+
+注册入口：
+
+* ModelScope: <https://modelscope.cn/home>
+* SiliconFlow: <https://cloud.siliconflow.cn/>
+
+配置示例：
+
+```env
+API_BASE=https://api-inference.modelscope.cn/v1
+API_KEY=your-modelscope-sdk-token
+MODEL=ZhipuAI/GLM-5
+
+EMBEDDING_BACKEND=api
+EMBEDDING_API_BASE=https://api.siliconflow.cn/v1
+EMBEDDING_API_KEY=sk-your-siliconflow-key
+EMBEDDING_API_MODEL=BAAI/bge-large-zh-v1.5
+```
+
+`API_KEY` 填 ModelScope 的 SDK Token，`EMBEDDING_API_KEY` 填 SiliconFlow 的 API Key。主 LLM 和 Embedding 可以分开用不同服务商；具体免费额度、限速和可用模型以两家官网当前页面为准。
+
 默认认证配置如下；如果不改，启动后可以直接登录：
 
 ```env
