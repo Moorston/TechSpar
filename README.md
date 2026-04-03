@@ -200,7 +200,7 @@ EMBEDDING_API_KEY=sk-your-siliconflow-key
 EMBEDDING_API_MODEL=BAAI/bge-large-zh-v1.5
 ```
 
-`API_KEY` 填 ModelScope 的 SDK Token，`EMBEDDING_API_KEY` 填 SiliconFlow 的 API Key。主 LLM 和 Embedding 可以分开用不同服务商；具体免费额度、限速和可用模型以两家官网当前页面为准。
+`API_KEY` 填 ModelScope 的 SDK Token，`EMBEDDING_API_KEY` 填 SiliconFlow 的 API Key。主 LLM 和 Embedding 可以分开用不同服务商，不需要来自同一家。
 
 认证默认值如下，不配置也能启动：
 
@@ -227,6 +227,8 @@ TAVILY_API_KEY=
 ```
 
 不填 `COPILOT_*` 时会回退到主 LLM；不配 NLS 时仍可使用 Copilot，但只能手动输入 HR 的问题。
+
+`TAVILY_API_KEY` 可以在 Tavily 官网注册后获取：<https://tavily.com/>。免费计划每月提供 `1,000 credits`，足够先把联网搜索跑通。
 
 如果你要启用录音转写，还需要继续补全这些可选项：
 

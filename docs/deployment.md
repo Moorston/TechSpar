@@ -64,7 +64,7 @@ EMBEDDING_API_KEY=sk-your-siliconflow-key
 EMBEDDING_API_MODEL=BAAI/bge-large-zh-v1.5
 ```
 
-`API_KEY` 填 ModelScope 的 SDK Token，`EMBEDDING_API_KEY` 填 SiliconFlow 的 API Key。主 LLM 和 Embedding 可以分开用不同服务商；具体免费额度、限速和可用模型以两家官网当前页面为准。
+`API_KEY` 填 ModelScope 的 SDK Token，`EMBEDDING_API_KEY` 填 SiliconFlow 的 API Key。主 LLM 和 Embedding 可以分开用不同服务商，不需要来自同一家。
 
 默认认证配置如下；如果不改，启动后可以直接登录：
 
