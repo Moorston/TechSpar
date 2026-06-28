@@ -115,7 +115,7 @@ def job_prep_start(req: JobPrepStartRequest, user_id: str = Depends(get_current_
     meta = {
         "company": preview.get("company") or (req.company or "").strip(),
         "position": preview.get("position") or (req.position or "").strip() or "JD 备面",
-        "jd_excerpt": jd_text[:1500],
+        "jd_text": jd_text,  # 完整 JD,供"再次练习"复用,无需重贴
         "use_resume": req.use_resume,
         "preview": preview,
     }
