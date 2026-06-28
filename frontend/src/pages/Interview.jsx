@@ -134,6 +134,14 @@ export default function Interview() {
   const totalQ = questions.length;
   const answeredCount = Object.keys(answers).length;
 
+  // Mirror the saved answer into the textarea whenever the active question changes,
+  // so paging back to review and forward again shows each answer instead of a blank
+  // box. Keyed only on the index — never re-runs while typing.
+  useEffect(() => {
+    if (isBatchMode) setDrillInput(answers[currentQ?.id] || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, isBatchMode]);
+
   // Best-effort autosave: persist answered questions so the session survives a
   // refresh/navigation. Fire-and-forget — a failed draft must not block answering.
   const persistDraft = (answersMap) => {
@@ -149,8 +157,9 @@ export default function Interview() {
     if (!text || !currentQ) return;
     const nextAnswers = { ...answers, [currentQ.id]: text };
     setAnswers(nextAnswers);
-    setDrillInput("");
     persistDraft(nextAnswers);
+    // The index-change effect resets the textarea to the next answer; on the last
+    // question we stay put and hand off to the finished view.
     if (currentIndex < totalQ - 1) setCurrentIndex((i) => i + 1);
     else setFinished(true);
   };
@@ -164,22 +173,21 @@ export default function Interview() {
 
   const handleSkip = () => {
     if (!currentQ) return;
-    setDrillInput("");
     if (currentIndex < totalQ - 1) setCurrentIndex((i) => i + 1);
     else setFinished(true);
   };
 
   const handlePrev = () => {
     if (currentIndex <= 0) return;
-    setDrillInput(answers[questions[currentIndex - 1]?.id] || "");
     setCurrentIndex((i) => i - 1);
   };
 
   const handleEndBatch = async () => {
     if (submitting) return;
-    // Allow retry when the previous background evaluation errored.
+    // Allow retry when a prior evaluation errored — either a live error task or a
+    // session reopened from history already in the review_failed state.
     const priorTask = tasks.find((t) => t.id === sessionId);
-    const isRetry = submitted && priorTask?.status === "error";
+    const isRetry = (submitted && priorTask?.status === "error") || sessionStatus === "review_failed";
     if (submitted && !isRetry) return;
     setSubmitting(true);
     try {
@@ -191,6 +199,7 @@ export default function Interview() {
       await endInterview(sessionId, answerList);
       setSubmitted(true);
       setFinished(true);
+      setSessionStatus("reviewing");  // clear any stale review_failed so the retry UI resets
       const label = isJobPrep ? "JD 备面复盘生成中" : "专项训练复盘生成中";
       const type = isJobPrep ? "jd_review" : "drill_review";
       startTask(sessionId, type, label);
@@ -375,7 +384,7 @@ export default function Interview() {
           </div>
           {(() => {
             const task = tasks.find((t) => t.id === sessionId);
-            const headerTaskError = task?.status === "error";
+            const headerTaskError = task?.status === "error" || sessionStatus === "review_failed";
             const headerDisabled = submitting || (submitted && !headerTaskError);
             return (
               <Button variant="destructive" size="sm" onClick={handleEndBatch} disabled={headerDisabled}>
@@ -409,8 +418,8 @@ export default function Interview() {
                   {(() => {
                     const task = tasks.find((t) => t.id === sessionId);
                     const taskDone = task?.status === "done";
-                    const taskError = task?.status === "error";
-                    const canRetry = submitted && taskError;
+                    const taskError = task?.status === "error" || sessionStatus === "review_failed";
+                    const canRetry = (submitted || sessionStatus === "review_failed") && taskError;
                     return (
                       <>
                         <Button
