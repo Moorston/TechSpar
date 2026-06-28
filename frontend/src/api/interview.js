@@ -174,6 +174,16 @@ export async function endInterview(sessionId, answers = null) {
   return res.json();
 }
 
+export async function saveDraftAnswers(sessionId, answers) {
+  const res = await authFetch(`${API_BASE}/interview/draft/${sessionId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answers }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getReview(sessionId) {
   const res = await authFetch(`${API_BASE}/interview/review/${sessionId}`);
   if (!res.ok) throw new Error(await res.text());

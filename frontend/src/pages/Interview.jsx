@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import { Check, Minus, Star } from "lucide-react";
 import ChatBubble from "../components/ChatBubble";
-import { sendMessage, sendMessageStream, endInterview, retryReview, getResumableSession } from "../api/interview";
+import { sendMessage, sendMessageStream, endInterview, retryReview, getResumableSession, saveDraftAnswers } from "../api/interview";
 import { useTaskStatus } from "../contexts/TaskStatusContext";
 import useVoiceInput from "../hooks/useVoiceInput";
 import { cn } from "@/lib/utils";
@@ -102,6 +102,10 @@ export default function Interview() {
           if (data.status !== "ongoing") {
             setFinished(true);
             setSubmitted(true);
+          } else {
+            // Resume at the first still-unanswered question instead of restarting at Q1.
+            const firstUnanswered = (data.questions || []).findIndex((q) => !saved[q.id]);
+            if (firstUnanswered > 0) setCurrentIndex(firstUnanswered);
           }
         }
         // If a review is already in flight server-side, subscribe to its status
@@ -130,11 +134,23 @@ export default function Interview() {
   const totalQ = questions.length;
   const answeredCount = Object.keys(answers).length;
 
+  // Best-effort autosave: persist answered questions so the session survives a
+  // refresh/navigation. Fire-and-forget — a failed draft must not block answering.
+  const persistDraft = (answersMap) => {
+    if (!isBatchMode || submitted) return;
+    const list = questions
+      .filter((q) => (answersMap[q.id] || "").trim())
+      .map((q) => ({ question_id: q.id, answer: answersMap[q.id] }));
+    if (list.length) saveDraftAnswers(sessionId, list).catch(() => {});
+  };
+
   const handleDrillSubmit = () => {
     const text = drillInput.trim();
     if (!text || !currentQ) return;
-    setAnswers((prev) => ({ ...prev, [currentQ.id]: text }));
+    const nextAnswers = { ...answers, [currentQ.id]: text };
+    setAnswers(nextAnswers);
     setDrillInput("");
+    persistDraft(nextAnswers);
     if (currentIndex < totalQ - 1) setCurrentIndex((i) => i + 1);
     else setFinished(true);
   };
