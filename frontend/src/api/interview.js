@@ -388,6 +388,27 @@ export async function updateSettings(payload) {
   return res.json();
 }
 
+// 连接测试：探测「表单里当前填的」配置（尚未保存也能测），返回 { ok, error }
+export async function testLLMConnection({ api_base, api_key, model }) {
+  const res = await authFetch(`${API_BASE}/settings/test-llm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_base, api_key, model }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function testEmbeddingConnection(payload) {
+  const res = await authFetch(`${API_BASE}/settings/test-embedding`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function rebuildEmbeddingIndex({ onProgress, onDone, onError } = {}) {
   const res = await authFetch(`${API_BASE}/settings/rebuild-index`, { method: "POST" });
   if (!res.ok) throw new Error(await res.text());
