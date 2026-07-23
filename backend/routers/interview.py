@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import sqlite3
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -18,6 +19,7 @@ from backend.graphs.job_prep import (
 from backend.graphs.review import generate_review
 from backend.graphs.topic_drill import evaluate_drill_answers, generate_drill_questions
 from backend.indexer import load_topics
+from backend.llm_provider import ProviderNotConfigured
 from backend.memory import extract_behavior_ops, get_profile, llm_update_profile, update_profile_after_interview, update_target_role
 from backend.models import (
     ChatRequest,
@@ -192,21 +194,34 @@ async def start_interview(req: StartInterviewRequest, user_id: str = Depends(get
 
         await update_target_role(user_id, target_role)
 
-        graph = compile_resume_interview(user_id)
         config = {"configurable": {"thread_id": session_id}}
-        result = await graph.ainvoke({"target_role": target_role}, config)
+        try:
+            # 启动会调 LLM/Embedding，并往 sqlite 写会话与 langgraph checkpoint。
+            # 任一失败(模型报错 / 磁盘写满 / OOM 连接中断)都在这里兜住，
+            # 返回可读原因，而不是裸奔成一句 Internal Server Error。
+            graph = compile_resume_interview(user_id)
+            result = await graph.ainvoke({"target_role": target_role}, config)
 
-        ai_message = ""
-        for msg in reversed(result["messages"]):
-            if isinstance(msg, AIMessage):
-                ai_message = msg.content
-                break
+            ai_message = ""
+            for msg in reversed(result["messages"]):
+                if isinstance(msg, AIMessage):
+                    ai_message = msg.content
+                    break
 
-        create_session(
-            session_id, req.mode.value, req.topic,
-            meta={"target_role": target_role}, user_id=user_id,
-        )
-        append_message(session_id, "assistant", ai_message, user_id=user_id)
+            create_session(
+                session_id, req.mode.value, req.topic,
+                meta={"target_role": target_role}, user_id=user_id,
+            )
+            append_message(session_id, "assistant", ai_message, user_id=user_id)
+        except ProviderNotConfigured:
+            raise  # 交给全局处理器 → 400 引导去「设置」配置
+        except (sqlite3.OperationalError, OSError) as exc:
+            logger.exception("简历面试启动：本地存储写入失败")
+            raise HTTPException(500, f"服务器存储异常(磁盘可能已满)，请联系管理员。{exc}")
+        except Exception as exc:
+            logger.exception("简历面试启动失败")
+            raise HTTPException(502, f"面试启动失败:模型或服务调用出错。{exc}")
+
         _graphs[session_id] = {
             "graph": graph,
             "config": config,
